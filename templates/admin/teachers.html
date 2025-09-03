@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>講師管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .admin-container {
+            display: grid;
+            grid-template-columns: 1fr 2.5fr;
+            gap: 30px;
+        }
+        .form-card, .list-card {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .form-card h2, .list-card h2 {
+            margin-bottom: 20px;
+            color: var(--secondary-color);
+        }
+        .form-card form button[type="submit"] {
+            width: 60%;
+            background: #3498db;
+            margin-top: 20px;
+            border: none;
+            font-weight: bold;      /* 太字にする */
+            padding: 10px 25px;     /* 内側の余白を調整 */
+            color: white;
+            font-size: 1.0rem;
+        }
+        .form-action-center {
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        /* 担当科目セル内のボタンのデザイン */
+        .subject-cell .choice-btn {
+            padding: 4px 10px;    /* ボタンを少し小さくする */
+            font-size: 0.85em;    /* 文字を少し小さくする */
+            margin: 2px;          /* ボタン間の余白 */
+        }
+        /* 担当科目セル内のボタンをまとめるコンテナ */
+        .choice-buttons-cell {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px; /* ボタン間の隙間 */
+            align-items: center; /* 中央揃え */
+        }
+        /* 名前とふりがな入力欄のスタイルを追加 */
+        .name-cell-input, .display-name-input {
+            display: block;
+            width: 100%;
+            padding: 4px;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .name-kana-input {
+            font-size: 0.8em;
+            color: #555;
+        }
+        .subject-checkboxes {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .teacher-list table {
+            table-layout: fixed;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        /* 各列の幅を指定 */
+        .th-id { width: 50px; }
+        .th-name { width: 160px; }
+        .th-display-name { width: 120px; }
+        .th-actions { width: 150px; }
+        .teacher-list th, .teacher-list td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+        }
+        .teacher-list th {
+            background-color: var(--light-gray);
+        }
+        .choice-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        }
+        .choice-btn {
+            padding: 6px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 17px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9em;
+        }
+        .choice-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            font-weight: bold;
+        }
+        .delete-btn, .save-btn {
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .delete-btn { background-color: var(--danger-color); }
+        .save-btn { background-color: #6c757d; }
+        .operations-cell {
+            white-space: nowrap; /* ボタンが折り返さないようにする */
+        }
+        /* 担当科目セル */
+        .subject-cell {
+            cursor: pointer; /* クリックできることを示す */
+        }
+        .subject-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            color: #adb5bd;
+            font-style: italic;
+        }
+        .subject-tag {
+            background-color: #e9ecef;
+            padding: 4px 8px;
+            border-radius: 4px; /* 四角い枠 */
+            font-size: 0.9em;
+            border: 1px solid #dee2e6;
+            color: #212529;
+            font-style: normal;
+        }
+        
+        /* --- モーダル用のスタイル --- */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        .modal-backdrop.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px 30px;
+            border-radius: var(--border-radius);
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 {
+            margin-bottom: 20px;
+        }
+        #modal-subjects-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 25px;
+            max-height: 40vh;
+            overflow-y: auto;
+        }
+        .modal-actions {
+            text-align: right;
+        }
+        .modal-actions .button {
+            margin-left: 10px;
+            padding: 8px 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>講師管理</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('admin_dashboard') }}">管理ダッシュボードへ戻る</a>
+            </nav>
+        </header>
+
+        <div class="admin-container">
+            <div class="form-card">
+                <h2>新しい講師を登録</h2>
+                <form id="add-teacher-form">
+                    <div class="form-group">
+                        <label for="teacher-name">講師名</label>
+                        <input type="text" id="teacher-name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="teacher-name-kana">ふりがな</label>
+                        <input type="text" id="teacher-name-kana" name="name_kana" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="teacher-display-name">表示名 (カレンダー用)</label>
+                        <input type="text" id="teacher-display-name" name="display_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>担当可能な科目</label>
+                        <div class="choice-buttons">
+                            {% for subject in subjects %}
+                            <button type="button" class="choice-btn" data-subject-id="{{ subject.id }}">
+                                {{ subject.display_name }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="form-action-center">
+                        <button type="submit" class="controls-panel button">この内容で登録する</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="list-card">
+                <h2>講師一覧</h2>
+                <div class="teacher-list">
+                    <table id="teacher-table">
+                        <thead>
+                            <tr>
+                                <th class="th-id">ID</th>
+                                <th class="th-name">講師名 / ふりがな</th>
+                                <th class="th-display-name">表示名</th>
+                                <th class="th-subjects">担当科目</th>
+                                <th class="th-actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="subject-edit-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3 id="modal-teacher-name">担当科目を編集</h3>
+            <div id="modal-subjects-container">
+                </div>
+            <div class="modal-actions">
+                <button id="modal-save-btn" class="controls-panel button">適用する</button>
+                <button id="modal-cancel-btn" class="controls-panel button">キャンセル</button>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/admin_teachers.js') }}"></script>
+</body>
+</html>

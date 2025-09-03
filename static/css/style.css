@@ -1,0 +1,232 @@
+/* static/css/style.css (改良版) */
+
+/* --- 基本設定 --- */
+:root {
+    --primary-color: #3498db;
+    --secondary-color: #2c3e50;
+    --success-color: #28a745;
+    --danger-color: #e74c3c;
+    --light-gray: #f8f9fa;
+    --border-color: #dee2e6;
+    --base-font-size: 16px;
+    --border-radius: 8px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+    font-size: var(--base-font-size);
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 95%;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* --- ヘッダーとナビゲーション --- */
+.page-header {
+    background: white;
+    padding: 15px 30px;
+    border-radius: var(--border-radius);
+    margin-bottom: 25px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.page-header h1 {
+    font-size: 1.8em;
+    color: var(--secondary-color);
+}
+
+.page-header .nav-links a {
+    text-decoration: none;
+    color: var(--primary-color);
+    margin-left: 20px;
+    font-weight: 500;
+    transition: color 0.3s;
+}
+.page-header .nav-links a:hover {
+    color: var(--secondary-color);
+}
+
+
+/* --- 操作パネル --- */
+.controls-panel {
+    background: white;
+    padding: 25px;
+    border-radius: var(--border-radius);
+    margin-bottom: 25px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.controls-panel select,
+.controls-panel input[type="date"],
+.controls-panel button {
+    padding: 10px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+    font-size: 0.95em;
+    margin-right: 10px;
+}
+
+.controls-panel button {
+    background-color: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+.controls-panel button:hover {
+    background-color: #2980b9;
+}
+#save-shifts {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+}
+#save-shifts:hover {
+    background-color: #218838;
+}
+
+/* --- カレンダーテーブル --- */
+.schedule-wrapper {
+    overflow-x: auto;
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    padding: 20px;
+}
+
+.schedule-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 2000px;
+}
+
+.schedule-table th,
+.schedule-table td {
+    border: 1px solid #e9ecef;
+    padding: 8px;
+    text-align: center;
+    vertical-align: middle;
+    height: 60px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.schedule-table th {
+    background-color: var(--secondary-color);
+    color: white;
+    font-weight: bold;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.time-header {
+    background-color: #1d2b38 !important;
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    min-width: 110px;
+}
+
+.time-slot {
+    background-color: var(--light-gray);
+    font-weight: bold;
+    position: sticky;
+    left: 0;
+    z-index: 15;
+    min-width: 110px;
+    font-size: 11px;
+}
+
+/* 曜日別の色分け */
+.weekday { background-color: #f1f3f5 !important; color: #333 !important; }
+.saturday { background-color: #e7f5ff !important; color: #1c7ed6 !important; }
+.sunday { background-color: #fff5f5 !important; color: #c92a2a !important; }
+
+/* --- カレンダーのホバー効果 --- */
+/* 時間ヘッダー以外の全てのセルを対象 */
+.schedule-table td:not(.time-slot) {
+    transition: background-color 0.2s;
+}
+
+/* 授業、空きシフト、完全な空欄、すべてのセルにホバー効果を適用 */
+.schedule-table td:not(.time-slot):hover {
+    background-color: #e9ecef !important; /* より濃いグレーに変更 */
+    cursor: pointer;
+}
+
+/* --- ローディング表示と通知 --- */
+.loader {
+    text-align: center;
+    padding: 50px;
+    font-size: 1.2em;
+    color: #777;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 5px;
+    color: white;
+    font-size: 1em;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: opacity 0.5s, transform 0.5s;
+}
+.notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+.notification.success { background-color: var(--success-color); }
+.notification.error { background-color: var(--danger-color); }
+
+/* --- カレンダーセルのスタイル改善 --- */
+
+/* 日付ヘッダー (1列目以外) */
+.schedule-table th:not(.time-header) {
+    height: 50px; /* 高さを少し小さく */
+    min-width: 80px;
+    max-width: 80px;
+}
+
+/* 時間ヘッダー (1列目) */
+.schedule-table th.time-header {
+    width: 110px; /* 幅を固定 */
+}
+
+/* 授業コマのセル (td) */
+.schedule-table td {
+    height: 60px; /* 授業コマの高さを指定 */
+    min-width: 80px;
+    max-width: 80px;
+    padding: 2px; /* ★ 内側の余白を小さく */
+    font-size: 12px;
+    line-height: 1.4;
+    
+    /* 文字がはみ出した際の処理 (変更なし) */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal;
+}
+
+/* ★ 授業が入っているコマの文字を中央揃えに */
+.schedule-table td.assigned-slot {
+    vertical-align: middle; /* 上下中央揃え */
+    text-align: center;     /* 左右中央揃え */
+}

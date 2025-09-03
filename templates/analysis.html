@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析レポート</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>分析レポート: {{ period.name }}</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+                <a href="{{ url_for('planner', period_id=period.id) }}">プランナー</a>
+                <span style="color: #ccc; margin-left: 15px;">|</span>
+                <a href="{{ url_for('contracts_input', period_id=period.id) }}">① 契約数設定</a>
+                <a href="{{ url_for('shift_input', period_id=period.id) }}">② シフト入力</a>
+                <a href="{{ url_for('schedule_view', period_id=period.id) }}">③ 時間割表示</a>
+                <a href="{{ url_for('analysis', period_id=period.id) }}" style="font-weight: bold;">④ 分析</a>
+            </nav>
+        </header>
+
+        <div id="analysis-results">
+            <div class="summary-cards">
+                <div class="card">
+                    <h3>総レッスン枠数</h3>
+                    <p id="total-lesson-capacity">---</p>
+                </div>
+                <div class="card">
+                    <h3>総契約レッスン数</h3>
+                    <p id="total-contracted-lessons">---</p>
+                </div>
+                <div class="card wide-card">
+                    <div class="rate-container">
+                        <h4>コマ稼働率</h4>
+                        <div class="chart-container">
+                            <canvas id="capacity-utilization-chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="rate-container">
+                        <h4>レッスン消化率</h4>
+                        <div class="chart-container">
+                            <canvas id="fulfillment-rate-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="distribution-reports">
+                <div class="report-card">
+                    <h2>時間帯別 割当数</h2>
+                    <canvas id="timeslot-chart"></canvas>
+                </div>
+                <div class="report-card">
+                    <h2>曜日別 割当数</h2>
+                    <canvas id="weekday-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="detail-reports">
+                <div class="report-card">
+                    <h2>講師別レポート</h2>
+                    <table class="report-table">
+                        <thead>
+                            <tr>
+                                <th>講師名</th>
+                                <th>申請シフト数</th>
+                                <th>割当レッスン数</th>
+                                <th>充当率 (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="teacher-report-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="report-card">
+                    <div class="report-header">
+                        <h2>生徒別レッスン消化レポート</h2>
+                        <div class="report-controls">
+                            <label for="contract-period-select">契約期間:</label>
+                            <select id="contract-period-select"></select>
+                        </div>
+                    </div>
+                    <div class="table-scroll-container">
+                        <table class="report-table">
+                            <thead>
+                                <tr>
+                                    <th>生徒名</th>
+                                    <th>契約コマ数</th>
+                                    <th>消化済コマ数</th>
+                                    <th>消化率 (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="student-fulfillment-report-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .hidden { display: none; }
+        .summary-cards, .detail-reports, .distribution-reports { display: grid; gap: 25px; margin-bottom: 25px; }
+        .summary-cards { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .detail-reports { grid-template-columns: 1fr 1fr; }
+        .distribution-reports { grid-template-columns: 1fr 1fr; }
+        
+        .card, .report-card { 
+            background: white; 
+            padding: 25px; 
+            border-radius: var(--border-radius); 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+            display: flex;
+            flex-direction: column;
+        }
+        .card h3 { 
+            font-size: 1.5em;
+            color: var(--secondary-color);
+            margin-bottom: 15px; 
+            text-align: left;
+        }
+        .card p, .card .chart-container { 
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card p {
+            font-size: 2.5em; 
+            font-weight: bold; 
+            color: var(--primary-color);
+        }
+        
+        .card.wide-card {
+            grid-column: span 1;
+            flex-direction: row;
+            justify-content: space-around;
+            align-items: center;
+        }
+        @media (min-width: 1200px) {
+            .summary-cards { grid-template-columns: 1fr 1fr 2fr; }
+        }
+        .rate-container { text-align: center; }
+        .rate-container h4 { font-size: 1.1em; color: #555; margin-bottom: 10px; }
+
+        .report-card h2 { font-size: 1.5em; color: var(--secondary-color); margin-bottom: 15px; }
+        .chart-container { position: relative; height: 120px; width: 120px; margin: 0 auto; }
+        .report-table { width: 100%; border-collapse: collapse; }
+        .report-table th, .report-table td { padding: 10px; border-bottom: 1px solid var(--border-color); text-align: left; }
+        .report-table th { background-color: var(--light-gray); font-size: 0.9em; }
+        .report-table td { font-size: 0.95em; }
+        
+        .report-table th:not(:first-child),
+        .report-table td:not(:first-child) {
+            text-align: center;
+        }
+
+        .report-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .report-header h2 { margin-bottom: 0; }
+        .report-controls { display: flex; align-items: center; gap: 10px; }
+        
+        #contract-period-select {
+            padding: 10px 12px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 0.95em;
+            background-color: #fff;
+        }
+
+        .table-scroll-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .table-scroll-container th {
+            position: sticky;
+            top: 0;
+            z-index: 1; 
+        }
+
+        #analysis-tooltip { position: absolute; display: block; padding: 10px 15px; background-color: #333; color: white; border-radius: var(--border-radius); box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; pointer-events: none; opacity: 0; transition: opacity 0.2s; font-size: 0.9em; min-width: 200px; }
+        #analysis-tooltip.show { opacity: 1; }
+        #analysis-tooltip h5 { margin-bottom: 8px; border-bottom: 1px solid #555; padding-bottom: 5px; font-size: 1em; }
+        #analysis-tooltip table { width: 100%; border-collapse: collapse; }
+        #analysis-tooltip th, #analysis-tooltip td { padding: 4px; text-align: left; }
+        #analysis-tooltip th { font-weight: normal; color: #ccc; }
+        #analysis-tooltip tr.unfulfilled-subject td { color: var(--danger-color); font-weight: bold; }
+    </style>
+
+    <div id="analysis-tooltip" class="hidden"></div>
+
+    <script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+</body>
+</html>

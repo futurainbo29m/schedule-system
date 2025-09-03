@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>計画期間ダッシュボード</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+        }
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            margin-bottom: 20px;
+            color: var(--secondary-color);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        #create-period-form button[type="submit"] {
+            width: 60%;
+            background: #3498db;
+            margin-top: 20px;
+            border: none;
+            font-weight: bold;
+            padding: 10px 20px;
+            color: white;
+            font-size: 1.0rem;
+            cursor: pointer; /* カーソルをポインターに */
+            transition: background-color 0.3s; /* 色の変化を滑らかに */
+        }
+        #create-period-form button[type="submit"]:hover {
+            background-color: #2980b9; /* 少し暗い青色 */
+        }
+        .form-action-center {
+            text-align: center;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .period-list table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .period-list th, .period-list td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+        }
+        .period-list th {
+            background-color: var(--light-gray);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>計画期間ダッシュボード</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('admin_dashboard') }}" style="color: var(--danger-color);">管理</a>
+            </nav>
+        </header>
+
+        <div class="dashboard-container">
+            <div class="card">
+                <h2>新しい計画期間を作成</h2>
+                <form id="create-period-form">
+                    <div class="form-group">
+                        <label for="period-name">名前 (例: 8月度, 夏期講習)</label>
+                        <input type="text" id="period-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="start-date">開始日</label>
+                        <input type="date" id="start-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="end-date">終了日</label>
+                        <input type="date" id="end-date" required>
+                    </div>
+                    <div class="form-action-center">
+                        <button type="submit" class="controls-panel button">作成する</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <h2>計画期間一覧</h2>
+                <div class="period-list">
+                    <table id="period-table">
+                        <thead>
+                            <tr>
+                                <th>名前</th>
+                                <th>期間</th>
+                                <th>ステータス</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in periods %}
+                            <tr>
+                                <td>{{ p.name }}</td>
+                                <td>{{ p.start_date.strftime('%Y/%m/%d') }} - {{ p.end_date.strftime('%Y/%m/%d') }}</td>
+                                <td>{{ p.status }}</td>
+                                <td>
+                                    <a href="{{ url_for('planner', period_id=p.id) }}" class="controls-panel button" style="padding: 5px 10px; font-size: 0.9em;">プランナーを開く</a>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4">作成された計画期間はありません。</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ダッシュボードページ専用のJavaScript
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('create-period-form');
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('period-name').value;
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+
+            try {
+                const response = await fetch('/api/planning-periods', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        start_date: startDate,
+                        end_date: endDate
+                    })
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || '作成に失敗しました。');
+                }
+                
+                alert(result.message);
+                window.location.reload(); // 成功したらページをリロードしてリストを更新
+            } catch (error) {
+                alert(`エラー: ${error.message}`);
+            }
+        });
+    });
+    </script>
+</body>
+</html>

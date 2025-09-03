@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>科目管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .admin-container {
+            display: grid;
+            grid-template-columns: 1fr 2.5fr;
+            gap: 30px;
+        }
+        .form-card, .list-card {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .form-card h2, .list-card h2 {
+            margin-bottom: 20px;
+            color: var(--secondary-color);
+        }
+        .form-card form button[type="submit"] {
+            width: 60%;
+            background: #3498db;
+            margin-top: 20px;
+            border: none;
+            font-weight: bold;      /* 太字にする */
+            padding: 10px 25px;     /* 内側の余白を調整 */
+            color: white;
+            font-size: 1.0rem;
+        }
+        .form-action-center {
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+        }
+        .subject-list table {
+            table-layout: fixed;
+            width: 100%;
+            border-collapse: collapse;
+        }
+        /* 各列の幅を指定 */
+        .th-id { width: 10%; }
+        .th-name { width: 35%; }
+        .th-display-name { width: 20%; }
+        .th-level { width: 20%; }
+        .th-actions { width: 15%; }
+        /* テーブル内の入力フォームのスタイル */
+        .subject-list input, .subject-list select {
+            width: 60%;
+            padding: 4px;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+        .subject-list th, .subject-list td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+        }
+        .subject-list th {
+            background-color: var(--light-gray);
+        }
+        .delete-btn, .save-btn {
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .delete-btn { background-color: var(--danger-color); }
+        .save-btn { background-color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>科目管理</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('admin_dashboard') }}">管理ダッシュボードへ戻る</a>
+            </nav>
+        </header>
+
+        <div class="admin-container">
+            <div class="form-card">
+                <h2>新しい科目を登録</h2>
+                <form id="add-subject-form">
+                    <div class="form-group">
+                        <label for="subject-name">科目名 (例: 数学I/A)</label>
+                        <input type="text" id="subject-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="subject-display-name">表示名 (例: 数IA)</label>
+                        <input type="text" id="subject-display-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="subject-level">対象学年</label>
+                        <select id="subject-level" required>
+                            <option value="小学">小学</option>
+                            <option value="中学">中学</option>
+                            <option value="高校">高校</option>
+                        </select>
+                    </div>
+                    <div class="form-action-center">
+                        <button type="submit" class="controls-panel button">この内容で登録する</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="list-card">
+                <h2>科目一覧</h2>
+                <div class="subject-list">
+                    <table id="subject-table">
+                        <thead>
+                            <tr>
+                                <th class="th-id">ID</th>
+                                <th class="th-name">科目名</th>
+                                <th class="th-display-name">表示名</th>
+                                <th class="th-level">対象学年</th>
+                                <th class="th-actions">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='js/admin_subjects.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>契約レッスン数設定 - {{ period.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* --- 新しいレイアウト用の基本スタイル (requests.htmlから引用・調整) --- */
+        .contracts-main-container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        .input-section, .overview-section {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .section-header h2 {
+            color: var(--secondary-color);
+        }
+        #save-all-contracts {
+            background: #3498db; /* ダッシュボードのボタンと同じ青色 */
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 1.0rem;
+            padding: 10px 20px; /* 余白を調整 */
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #save-all-contracts:hover:not(:disabled) {
+            background-color: #2980b9; /* 少し暗い青色 */
+        }
+        #save-all-contracts:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        .controls-panel {
+            margin-bottom: 0;
+        }
+        .input-area {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 25px;
+            min-height: 400px;
+        }
+
+        /* --- 左カラム：生徒選択 --- */
+        .student-selection-column {
+            border-right: 1px solid var(--border-color);
+            padding-right: 25px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; 
+        }
+        .student-list {
+            max-height: 380px;
+            overflow-y: auto;
+            list-style: none;
+            padding: 5px;
+            margin: 0 -5px;
+        }
+        .student-list-item {
+            padding: 6px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border: 1px solid #bcbcbd;
+            margin-bottom: 5px;
+        }
+        .student-list-item:hover {
+            background-color: #f8f9fa;
+        }
+        .student-list-item.selected {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+        }
+        #student-grade-filter-bar {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+            padding-bottom: 10px; border-bottom: 1px solid var(--border-color);
+            flex-wrap: nowrap; overflow-x: auto;
+        }
+        #student-grade-filter-bar .teacher-filter-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 6px 15px; min-height: 34px; border: 1px solid var(--border-color);
+            border-radius: 17px; background-color: #f8f9fa; cursor: pointer;
+            transition: all 0.2s; font-size: 0.9em; white-space: nowrap;
+        }
+        #student-grade-filter-bar .teacher-filter-btn.active {
+            background-color: var(--primary-color); color: white; border-color: var(--primary-color);
+        }
+        #student-grade-filter-bar::-webkit-scrollbar { height: 6px; }
+        #student-grade-filter-bar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        /* --- 右カラム：契約レッスン入力 --- */
+        .lesson-input-column {
+            display: flex; flex-direction: column; padding-right: 20px;
+        }
+        #selected-student-name {
+            color: var(--secondary-color); margin-bottom: 20px;
+        }
+        #lesson-input-list {
+            flex-grow: 1; padding-left: 10px;
+        }
+        .contract-period-tabs {
+            display: flex; flex-wrap: wrap; gap: 10px; border-bottom: 2px solid var(--border-color);
+            margin-bottom: 10px; padding-bottom: 10px;
+        }
+        .tab-btn {
+            padding: 8px 18px; border: none; border-radius: 5px 5px 0 0; cursor: pointer;
+            background-color: #f1f3f5; font-size: 0.95em; color: #495057; transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background-color: var(--primary-color); color: white; font-weight: bold;
+        }
+        .lesson-input-item {
+            display: grid; grid-template-columns: 120px 1fr 60px; gap: 15px;
+            align-items: center; margin-bottom: 10px;
+        }
+        .lesson-input-bar {
+            display: flex; border: 1px solid var(--border-color); border-radius: 5px;
+            overflow: hidden; height: 30px; background-color: #e9ecef;
+        }
+        .bar-segment {
+            flex-grow: 1; border-right: 2px solid #fff; background-color: transparent;
+            cursor: pointer; transition: background-color 0.2s;
+        }
+        .bar-segment:last-child { border-right: none; }
+        .bar-segment:hover { background-color: #ced4da; }
+        .bar-segment.active { background-color: var(--primary-color); }
+        .bar-segment.extra { background-color: #1f6499; }
+        .lesson-input-item input {
+            width: 100%; text-align: center; padding: 8px; border: 1px solid var(--border-color);
+            border-radius: 5px; font-size: 1.0em; font-weight: bold;
+        }
+        .overview-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            break-inside: avoid;
+        }
+        .overview-table th, .overview-table td {
+            border: 1px solid var(--border-color);
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: middle;
+        }
+        .overview-table th {
+            background-color: var(--light-gray);
+            font-weight: bold;
+        }
+        .overview-table th:nth-child(3) {
+            text-align: center;
+        }
+        .student-name-cell {
+            width: 35%;
+        }
+        .subjects-cell {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .overview-table .total-cell {
+            text-align: center;
+            font-size: 1.1em;
+            width: 15%;
+        }
+        #overview-grid {
+            column-count: 1;
+            column-gap: 20px;
+        }
+        @media (min-width: 1200px) {
+            #overview-grid { column-count: 2; }
+        }
+        @media (min-width: 1600px) {
+            #overview-grid { column-count: 3; }
+        }
+        .subject-tag {
+            background-color: #e9ecef;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+        .overview-table .total-cell.total-cell-zero {
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+        .subjects-cell .no-request-text {
+            color: #adb5bd;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>契約レッスン数設定: {{ period.name }}</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+                <a href="{{ url_for('planner', period_id=period.id) }}">プランナー</a>
+                <span style="color: #ccc; margin-left: 15px;">|</span>
+                <a href="{{ url_for('contracts_input', period_id=period.id) }}" style="font-weight: bold;">① 契約数設定</a>
+                <a href="{{ url_for('shift_input', period_id=period.id) }}">② シフト入力</a>
+                <a href="{{ url_for('schedule_view', period_id=period.id) }}">③ 時間割表示</a>
+                <a href="{{ url_for('analysis', period_id=period.id) }}">④ 分析</a>
+            </nav>
+        </header>
+
+        <div class="contracts-main-container">
+            <section class="input-section">
+                <div class="section-header">
+                    <h2>希望レッスン数の入力</h2>
+                    <button id="save-all-contracts" class="controls-panel button">全ての設定を保存</button>
+                </div>
+                <div class="input-area">
+                    <div class="student-selection-column">
+                        <div id="student-grade-filter-bar">
+                            <!-- JSで学年フィルターが挿入される -->
+                        </div>
+                        <ul id="student-list" class="student-list">
+                            <!-- JSで生徒リストが挿入される -->
+                        </ul>
+                    </div>
+                    <div class="lesson-input-column">
+                        <div id="contract-period-tabs" class="contract-period-tabs">
+                            <!-- JSで契約期間タブが挿入される -->
+                        </div>
+                        <h3 id="selected-student-name">生徒を選択してください</h3>
+                        <div id="lesson-input-list">
+                            <!-- JSで入力欄が挿入される -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <section class="overview-section">
+                <div class="section-header">
+                    <h2 id="overview-title">契約数一覧</h2>
+                </div>
+                <div id="overview-grid">
+                    <!-- JSによってここに一覧表が生成される -->
+                </div>
+            </section>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/contracts.js') }}"></script>
+</body>
+</html>

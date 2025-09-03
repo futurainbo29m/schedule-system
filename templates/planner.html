@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時間割プランナー - {{ period.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .planner-container {
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 120px);
+        }
+        .main-calendar-area {
+            flex-grow: 1;
+            display: flex; /* Flexboxコンテナにする */
+            flex-direction: column; /* 子要素を縦に並べる */
+            background: white;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            min-width: 0;
+        }
+        .calendar-wrapper {
+            overflow: auto; /* カレンダー本体をスクロール可能に */
+            flex-grow: 1; /* 残りの高さをすべて使う */
+        }
+        .sidebar {
+            width: 350px;
+            flex-shrink: 0;
+            background: white;
+            padding: 20px;
+            border-radius: var(--border-radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex; /* ★ displayをflexに変更 */
+            flex-direction: column; /* ★ 要素を縦に並べる */
+            overflow: hidden;
+        }
+        .sidebar-section {
+            /* flex-shrink: 0; を削除 */
+            margin-bottom: 0px;
+        }
+
+        .sidebar-section.control-panel {
+            flex-shrink: 0; /* コントロールパネルは縮まないようにする */
+        }
+        
+        .sidebar-section.unassigned-container {
+            flex-grow: 1; /* ★このセクションが残りの高さを埋める */
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* ★縮小計算を正しく行うため */
+            margin-bottom: 0; /* ★このセクションの下の余白は不要 */
+        }
+        
+        .unassigned-list-wrapper {
+            flex-grow: 1; /* ★ラッパーが伸びるようにする */
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        
+        .sidebar-section h3 {
+            margin-bottom: 15px;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            color: var(--secondary-color);
+        }
+
+        /* --- 講師フィルターバー --- */
+        .teacher-filter-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            min-height: 52px;
+            padding-bottom: 10px;
+            overflow-y: hidden;
+        }
+        .teacher-filter-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 15px;
+            min-height: 34px;
+            border: 1px solid var(--border-color);
+            border-radius: 17px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+        .teacher-filter-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        /* --- スクロールバーのスタイリング --- */
+        .teacher-filter-bar::-webkit-scrollbar { height: 6px; }
+        .teacher-filter-bar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        .teacher-filter-bar::-webkit-scrollbar-thumb:hover { background: #999; }
+
+        /* --- 概要モードのセル --- */
+        .schedule-table td.summary-slot {
+            background-color: #e7f5ff;
+            color: #1c7ed6;
+            font-weight: normal;
+            font-size: 0.8em;
+        }
+
+        /* --- 講師選択モーダル --- */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            min-width: 300px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-content h3 {
+            margin-bottom: 20px;
+            color: var(--secondary-color);
+        }
+        #teacher-options-container .teacher-option {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            text-align: left;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #teacher-options-container .teacher-option:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        #modal-cancel-btn {
+            margin-top: 10px;
+            padding: 8px 14px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .hidden { display: none !important; }
+
+        /* --- ツールチップ --- */
+        #planner-tooltip {
+            position: absolute;
+            display: none;
+            background-color: #333;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: pre-wrap;
+        }
+
+        /* --- サイドバーのコントロールパネル --- */
+        .control-panel-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 0px;
+            flex-grow: 1;
+            margin-bottom: 10px;
+        }
+        #analysis-summary {
+            flex-grow: 1;
+        }
+        #analysis-summary p {
+            margin-bottom: 0;
+        }
+        #open-auto-assign-modal-btn {
+            margin-right: 15px;
+            flex-shrink: 0;
+            font-weight: bold; 
+            background-color: var(--primary-color) ;
+            color: white;
+            font-size: 0.9em;
+            font-weight: bold;
+            padding: 12px 20px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #open-auto-assign-modal-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        /* --- 未配置レッスンリスト --- */
+        #unassigned-lessons-list ul { list-style: none; padding-left: 0; }
+        #unassigned-lessons-list li { padding: 8px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; margin-bottom: 5px; border: 1px solid var(--border-color); }
+        #unassigned-lessons-list li:hover { background-color: #e9ecef; }
+        #unassigned-lessons-list li.selected { background-color: var(--primary-color) !important; color: white; font-weight: bold; }
+        
+        /* --- 未配置レッスンリストの小見出し --- */
+        #unassigned-lessons-list h3 {
+            font-size: 1.0em; /* 親要素のフォントサイズに合わせる (h3のデフォルトより小さい) */
+            font-weight: bold;
+            color: #495057; 
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #dee2e6; /* 線を細く、色を薄く */
+        }
+        #unassigned-lessons-list h3:first-of-type {
+            margin-top: 0; /* 最初の小見出しの上マージンは不要 */
+        }
+
+        /* --- 配置可能コマのハイライト --- */
+        .schedule-table td.possible-slot {
+            cursor: pointer;
+            text-align: center;
+        }
+
+        /* 人数に応じた色の濃さ */
+        .possible-slot-dense-1 { background-color: #d4edda !important; }
+        .possible-slot-dense-2 { background-color: #b8e0c3 !important; }
+        .possible-slot-dense-3 { background-color: #9cd4ac !important; }
+        .possible-slot-dense-4 { background-color: #80c895 !important; }
+
+        /* レッスン未選択時のシフトハイライト */
+        .shift-highlight {
+            background-color: #e7f5ff;
+        }
+        /* 人数に応じた色の濃さ (青ベース) */
+        .shift-highlight-dense-1 { background-color: #d0ebff !important; }
+        .shift-highlight-dense-2 { background-color: #a5d8ff !important; }
+        .shift-highlight-dense-3 { background-color: #74c0fc !important; }
+        .shift-highlight-dense-4 { background-color: #4dabf7 !important; }
+
+        /* 空きコマの「+」マーク */
+        .schedule-table td.empty-and-possible:not(.summary-slot)::after {
+            content: "+";
+            font-size: 1.2em;
+            color: #155724;
+            font-weight: bold;
+        }
+
+        /* 概要モードのコマがハイライトされた時の表示 */
+        .schedule-table td.summary-slot.possible-slot {
+            line-height: 1.3;
+        }
+        .schedule-table td.summary-slot.empty-and-possible::after {
+            content: "\A+";
+            white-space: pre;
+            font-size: 1.2em;
+            color: #155724;
+            font-weight: bold;
+        }
+
+        .unassigned-student-group.focused {
+            background-color: #e7f5ff; /* 薄い青色 */
+            border-color: var(--primary-color);
+            border-width: 2px;
+        }
+        td.focused-student-lesson {
+            background-color: #fff3cd !important; /* 薄い黄色 */
+            box-shadow: inset 0 0 0 2px #ffc107;
+        }
+        td.other-student-lesson {
+            background-color: #f8f9fa; /* 薄いグレー */
+            color: #6c757d;
+        }
+
+        /* --- レッスン編集モーダル --- */
+        #lesson-edit-modal-body .teacher-group {
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+        #lesson-edit-modal-body .teacher-group:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        #lesson-edit-modal-body .teacher-name-header {
+            font-weight: bold;
+            color: var(--secondary-color);
+            margin-bottom: 12px;
+            font-size: 1.1em;
+        }
+        #lesson-edit-modal-body .lesson-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-radius: 4px;
+        }
+        #lesson-edit-modal-body .lesson-item span {
+            font-size: 1.4em;
+        }
+        #lesson-edit-modal-body .lesson-item:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        #lesson-edit-modal-body .lesson-actions button {
+            margin-left: 8px;
+            padding: 6px 12px;
+            font-size: 1.1em;
+            cursor: pointer;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+        }
+
+        .edit-lesson-btn {
+            background-color: var(--success-color);
+            border-color: var(--success-color);
+            color: white;
+        }
+        .edit-lesson-btn:hover {
+            background-color: #218838;
+            border-color: #1e7e34;
+        }
+        .delete-lesson-btn {
+            background-color: var(--danger-color);
+            color: white;
+            border-color: var(--danger-color);
+        }
+        .delete-lesson-btn:hover {
+            background-color: #c82333;
+            border-color: #c82333;
+        }
+
+        #modal-close-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            margin-top: 20px;
+            padding: 6px 14px;
+            border-radius: 5px;
+            font-size: 0.90em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #modal-close-btn:hover {
+            background-color: #5a6268;
+        }
+
+        .button-secondary {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            margin-top: 15px;
+        }
+
+        /* --- レッスン入れ替えモーダル --- */
+        #lesson-swap-modal .modal-content {
+            min-width: 380px;
+            max-width: 420px;
+        }
+        #lesson-swap-modal .modal-content p {
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        #lesson-swap-modal-body .swap-option {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            text-align: left;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #lesson-swap-modal-body .swap-option:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        #modal-swap-cancel-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            margin-top: 15px;
+            padding: 6px 14px;
+            border-radius: 5px;
+            font-size: 0.90em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #modal-swap-cancel-btn:hover {
+            background-color: #5a6268;
+        }
+
+        /* --- ルール違反コマのハイライト --- */
+        .schedule-table td.violation-slot {
+            background-color: #f8d7da !important;
+            border: 2px solid var(--danger-color) !important;
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+
+        #lock-mode-toggle-btn {
+            padding: 5px 12px;
+            border: 1px solid #6c757d;
+            border-radius: 15px;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9em;
+            margin-left: auto;
+        }
+        #lock-mode-toggle-btn.active {
+            background-color: var(--danger-color);
+            color: white;
+            border-color: var(--danger-color);
+            font-weight: bold;
+        }
+        #lock-mode-toggle-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* --- レッスン表示用スタイル --- */
+        .lesson-container {
+            padding: 2px;
+        }
+        .lesson-item {
+            padding: 4px;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+            background-color: #f9f9f9;
+            margin-bottom: 2px;
+            font-size: 12px; 
+            color: #333;
+            cursor: default;
+            transition: all 0.2s;
+        }
+        .lock-mode-active .lesson-item {
+            cursor: pointer;
+        }
+        .lock-mode-active .lesson-item:hover {
+            background-color: #e9ecef;
+        }
+        .lesson-item.locked {
+            border: 1px solid var(--danger-color);
+            background-color: #fff2f2;
+        }
+
+        /* --- 自動配置モーダル --- */
+        .option-group {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .option-group:last-of-type {
+            border-bottom: none;
+        }
+        .option-group h4 {
+            margin-bottom: 15px;
+            color: var(--secondary-color);
+        }
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .modal-actions {
+            margin-top: 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #execute-auto-assign-btn {
+            background: #3498db;
+            border: none;
+            font-weight: bold;
+            padding: 10px 25px;
+            color: white;
+            font-size: 1.0rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            border-radius: 5px;
+        }
+        #execute-auto-assign-btn:hover {
+            background-color: #2980b9;
+        }
+
+        #cancel-auto-assign-btn {
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            transition: background-color 0.2s;
+            font-size: 1.0rem;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #cancel-auto-assign-btn:hover {
+            background-color: #5a6268;
+        }
+
+        #auto-assign-modal input[type="number"],
+        #auto-assign-modal select {
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 0.95em;
+        }
+
+        /* --- ラベル用のCSS --- */
+        .lesson-label-small {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            color: #555;
+            margin-top: 2px;
+        }
+        .label-period {
+            font-size: 1.0em;
+        }
+        .label-number {
+            font-size: 1.3em;
+            line-height: 1;
+        }
+
+        /* --- トグルスイッチ --- */
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
+        input:checked + .slider { background-color: var(--primary-color); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        .slider.round { border-radius: 28px; }
+        .slider.round:before { border-radius: 50%; }
+
+        /* --- ローディング画面 --- */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 3000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--secondary-color);
+        }
+        .loading-spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid var(--primary-color);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        #loading-progress {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* --- 未配置レッスンリスト（新デザイン） --- */
+        #unassigned-lessons-list ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .unassigned-student-group {
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .unassigned-student-group:last-child {
+            border-bottom: none;
+        }
+        .student-name-header {
+            font-weight: bold;
+            margin-bottom: 7px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .student-name-header .student-name {
+            font-size: 0.95em;
+        }
+        .student-name-header .lesson-count {
+            font-weight: normal;
+            font-size: 0.9em;
+        }
+        .subjects-container {
+            padding-left: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .unassigned-subject {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            background-color: #f8f9fa;
+            transition: all 0.2s;
+        }
+        .unassigned-subject:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+        }
+        .unassigned-subject.selected {
+            background-color: var(--primary-color) !important;
+            color: white;
+            font-weight: bold;
+            border-color: var(--primary-color);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-section {
+            min-height: 0;
+        }
+        .sidebar-section.flex-grow-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .teacher-filter-bar {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+        
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        #lock-mode-toggle-btn {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>プランナー: {{ period.name }}</h1>
+            <nav class="nav-links">
+            <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+                <a href="{{ url_for('planner', period_id=period.id) }}" style="font-weight: bold;">プランナー</a>
+                <span style="color: #ccc; margin-left: 15px;">|</span>
+                <a href="{{ url_for('contracts_input', period_id=period.id) }}">① 契約数設定</a>
+                <a href="{{ url_for('shift_input', period_id=period.id) }}">② シフト入力</a>
+                <a href="{{ url_for('schedule_view', period_id=period.id) }}">③ 時間割表示</a>
+                <a href="{{ url_for('analysis', period_id=period.id) }}">④ 分析</a>
+        </nav>
+        </header>
+
+        <div class="planner-container">
+            <main class="main-calendar-area">
+                <div id="teacher-filter-container">
+                    <div class="filter-header">
+                        <h3>表示する講師を選択</h3>
+                        <button id="lock-mode-toggle-btn" disabled>ロックモード OFF</button>
+                    </div>
+                    <div class="teacher-filter-bar" id="teacher-filter-bar">
+                        <button class="teacher-filter-btn" data-teacher-id="all">全員</button>
+                    </div>
+                </div>
+
+                <div class="calendar-wrapper" id="calendar-container">
+                    <p>読み込み中...</p>
+                </div>
+            </main>
+
+            <aside class="sidebar">
+                <div class="sidebar-section control-panel">
+                    <h3>コントロールパネル</h3>
+                    <div class="control-panel-content">
+                        <div id="analysis-summary">
+                            <p>読み込み中...</p>
+                        </div>
+                        <button id="open-auto-assign-modal-btn" class="controls-panel button">自動配置</button>
+                    </div>
+                </div>
+                <div class="sidebar-section unassigned-container">
+                    <h3>未配置レッスン</h3>
+                    <div id="student-grade-filter-bar" class="teacher-filter-bar" style="margin-bottom: 10px; padding-bottom: 10px;">
+                        <button class="teacher-filter-btn active" data-grade="all">全員</button>
+                        <button class="teacher-filter-btn" data-grade="小学">小学</button>
+                        <button class="teacher-filter-btn" data-grade="中1">中１</button>
+                        <button class="teacher-filter-btn" data-grade="中2">中２</button>
+                        <button class="teacher-filter-btn" data-grade="中3">中３</button>
+                        <button class="teacher-filter-btn" data-grade="高1">高１</button>
+                        <button class="teacher-filter-btn" data-grade="高2">高２</button>
+                        <button class="teacher-filter-btn" data-grade="高3">高３</button>
+                        <button class="teacher-filter-btn" data-grade="浪人">浪人</button>
+                    </div>
+                <div class="unassigned-list-wrapper">
+                    <div id="unassigned-lessons-list">
+                        <p>読み込み中...</p>
+                    </div>
+                </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+    
+    <div id="planner-tooltip"></div>
+
+    <div id="teacher-select-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3>配置する講師を選択してください</h3>
+            <div id="teacher-options-container">
+                </div>
+            <button id="modal-cancel-btn">キャンセル</button>
+        </div>
+    </div>
+
+    <div id="lesson-edit-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="min-width: 400px;">
+            <h3 id="lesson-edit-modal-title">レッスンの編集</h3>
+            <div id="lesson-edit-modal-body">
+                </div>
+            <button id="modal-close-btn" class="button-secondary">閉じる</button>
+        </div>
+    </div>
+
+    <div id="lesson-swap-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h3 id="lesson-swap-modal-title">レッスンを入れ替え</h3>
+            <p>このコマは満員です。移動するには、既存のレッスンを一つ選んで入れ替えてください。</p>
+            <div id="lesson-swap-modal-body">
+                </div>
+            <button id="modal-swap-cancel-btn" class="button-secondary">キャンセル</button>
+        </div>
+    </div>
+
+    <div id="auto-assign-modal" class="modal-backdrop hidden">
+        <div class="modal-content" style="min-width: 500px;">
+            <h3>自動配置オプション</h3>
+
+            <div class="option-group">
+                <h4>授業間隔ルール</h4>
+                <div class="option-item">
+                    <label class="switch">
+                        <input type="checkbox" id="enable-interval-rule" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <label for="enable-interval-rule">同じ科目の授業を</label>
+                    <input type="number" id="interval-days" value="3" min="1" style="width: 60px; text-align: center;">
+                    <label for="interval-days">日以上あける</label>
+                </div>
+                <div class="option-item">
+                    <label for="interval-strength">ルールの強度:</label>
+                    <select id="interval-strength">
+                        <option value="weak">弱い</option>
+                        <option value="normal" selected>普通</option>
+                        <option value="strong">強い</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="option-group">
+                <h4>優先講師ルール</h4>
+                <div class="option-item">
+                    <label class="switch">
+                        <input type="checkbox" id="enable-preferred-rule" checked>
+                        <span class="slider round"></span>
+                    </label>
+                    <label for="enable-preferred-rule">生徒の優先講師を可能な限り割り当てる</label>
+                </div>
+                 <div class="option-item">
+                    <label for="preferred-strength">ルールの強度:</label>
+                    <select id="preferred-strength">
+                        <option value="weak">弱い</option>
+                        <option value="normal" selected>普通</option>
+                        <option value="strong">強い</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button id="cancel-auto-assign-btn" class="controls-panel button">キャンセル</button>
+                <button id="execute-auto-assign-btn" class="controls-panel button">この設定で実行</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading-overlay" class="hidden">
+        <div class="loading-spinner"></div>
+        <p>自動配置を実行中...</p>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/planner.js') }}"></script>
+</body>
+</html>
+

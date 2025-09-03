@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時間割管理システム</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* トップページ専用のスタイル */
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f2f5;
+        }
+        .home-container {
+            text-align: center;
+            background: white;
+            padding: 50px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .home-container h1 {
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .nav-button {
+            display: inline-block;
+            margin: 10px;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            text-decoration: none;
+            color: white;
+            background-color: #3498db;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav-button:hover {
+            background-color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <div class="home-container">
+        <h1>時間割管理システム</h1>
+        <a href="{{ url_for('shift_input') }}" class="nav-button">シフト入力・生成</a>
+        <a href="{{ url_for('schedule_view') }}" class="nav-button">時間割を閲覧</a>
+        <a href="{{ url_for('analysis') }}" class="nav-button">分析レポート</a> <a href="{{ url_for('admin_dashboard') }}" class="nav-button" style="background-color: #7f8c8d;">管理</a> </div>
+    </div>
+</body>
+</html>

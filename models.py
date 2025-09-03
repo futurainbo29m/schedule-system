@@ -1,0 +1,206 @@
+# models.py (契約レッスンとの直接連携を強化)
+
+from extensions import db
+from datetime import date
+
+teacher_subjects = db.Table(
+    'teacher_subjects',
+    db.Column('teacher_id',
+              db.Integer,
+              db.ForeignKey('teacher.id'),
+              primary_key=True),
+    db.Column('subject_id',
+              db.Integer,
+              db.ForeignKey('subject.id'),
+              primary_key=True))
+
+student_preferred_teachers = db.Table(
+    'student_preferred_teachers',
+    db.Column('student_id',
+              db.Integer,
+              db.ForeignKey('student.id'),
+              primary_key=True),
+    db.Column('teacher_id',
+              db.Integer,
+              db.ForeignKey('teacher.id'),
+              primary_key=True))
+
+
+class PlanningPeriod(db.Model):
+    __tablename__ = 'planning_period'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    status = db.Column(db.String(20), default='planning', nullable=False)
+
+    requests = db.relationship('StudentRequest',
+                               backref='planning_period',
+                               lazy=True,
+                               cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f'<PlanningPeriod {self.name}>'
+
+
+class ContractPeriod(db.Model):
+    """契約期間（例: 8月分、夏季講習）を定義するモデル"""
+    __tablename__ = 'contract_period'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    display_name = db.Column(db.String(50), nullable=True)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    period_type = db.Column(db.String(20), default='regular', nullable=False)
+
+    contracted_lessons = db.relationship('ContractedLesson',
+                                         backref='contract_period',
+                                         lazy=True,
+                                         cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f'<ContractPeriod {self.name}>'
+
+
+class ContractedLesson(db.Model):
+    """生徒ごとの契約レッスン数（レッスン権利の元帳）を記録するモデル"""
+    __tablename__ = 'contracted_lesson'
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer,
+                           db.ForeignKey('student.id'),
+                           nullable=False)
+    subject_id = db.Column(db.Integer,
+                           db.ForeignKey('subject.id'),
+                           nullable=False)
+    contract_period_id = db.Column(db.Integer,
+                                   db.ForeignKey('contract_period.id'),
+                                   nullable=False)
+    contracted_count = db.Column(db.Integer, default=1, nullable=False)
+
+    student = db.relationship('Student',
+                              backref='contracted_lessons',
+                              lazy=True)
+    subject = db.relationship('Subject',
+                              backref='contracted_lessons',
+                              lazy=True)
+    fulfilled_lessons = db.relationship('Lesson',
+                                        backref='contracted_lesson',
+                                        lazy=True)
+
+
+class Teacher(db.Model):
+    __tablename__ = 'teacher'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    name_kana = db.Column(db.String(100), nullable=True)
+    display_name = db.Column(db.String(50), nullable=True)
+    is_joker = db.Column(db.Boolean, default=False, nullable=False)
+    subjects = db.relationship('Subject',
+                               secondary=teacher_subjects,
+                               lazy='subquery',
+                               backref=db.backref('teachers', lazy=True))
+    shifts = db.relationship('Shift', backref='teacher', lazy=True)
+    assignments = db.relationship('Assignment',
+                                  backref='teacher',
+                                  lazy=True,
+                                  cascade="all, delete-orphan")
+
+
+class Student(db.Model):
+    __tablename__ = 'student'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    name_kana = db.Column(db.String(100), nullable=True)
+    display_name = db.Column(db.String(50), nullable=True)
+    grade = db.Column(db.String(10), nullable=False)
+    preferred_teachers = db.relationship('Teacher',
+                                         secondary=student_preferred_teachers,
+                                         lazy='subquery',
+                                         backref=db.backref(
+                                             'preferred_by_students',
+                                             lazy=True))
+
+
+class Subject(db.Model):
+    __tablename__ = 'subject'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    display_name = db.Column(db.String(10), nullable=True)
+    level = db.Column(db.String(20), default='中学', nullable=False)
+
+
+class TimeSlot(db.Model):
+    __tablename__ = 'time_slot'
+    id = db.Column(db.Integer, primary_key=True)
+    weekday_time = db.Column(db.String(50), nullable=False)
+    weekendTime = db.Column(db.String(50), nullable=False)
+
+
+class Shift(db.Model):
+    __tablename__ = 'shift'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    is_available = db.Column(db.Boolean, nullable=False)
+    teacher_id = db.Column(db.Integer,
+                           db.ForeignKey('teacher.id'),
+                           nullable=False)
+    time_slot_id = db.Column(db.Integer,
+                             db.ForeignKey('time_slot.id'),
+                             nullable=False)
+
+
+class StudentRequest(db.Model):
+    __tablename__ = 'student_request'
+    id = db.Column(db.Integer, primary_key=True)
+    priority = db.Column(db.String(10), nullable=False)
+    requested_lessons = db.Column(db.Integer, default=1, nullable=False)
+    student_id = db.Column(db.Integer,
+                           db.ForeignKey('student.id'),
+                           nullable=False)
+    subject_id = db.Column(db.Integer,
+                           db.ForeignKey('subject.id'),
+                           nullable=False)
+
+    planning_period_id = db.Column(db.Integer,
+                                   db.ForeignKey('planning_period.id'),
+                                   nullable=False)
+
+
+class Assignment(db.Model):
+    __tablename__ = 'assignment'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    time_slot_id = db.Column(db.Integer,
+                             db.ForeignKey('time_slot.id'),
+                             nullable=False)
+    teacher_id = db.Column(db.Integer,
+                           db.ForeignKey('teacher.id'),
+                           nullable=False)
+    lessons = db.relationship('Lesson',
+                              backref='assignment',
+                              lazy=True,
+                              cascade="all, delete-orphan")
+
+
+class Lesson(db.Model):
+    __tablename__ = 'lesson'
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer,
+                           db.ForeignKey('student.id'),
+                           nullable=False)
+    subject_id = db.Column(db.Integer,
+                           db.ForeignKey('subject.id'),
+                           nullable=False)
+    assignment_id = db.Column(db.Integer,
+                              db.ForeignKey('assignment.id'),
+                              nullable=True)
+
+    contracted_lesson_id = db.Column(db.Integer,
+                                     db.ForeignKey('contracted_lesson.id'),
+                                     nullable=False)
+
+    student = db.relationship('Student', backref='lessons', lazy=True)
+    subject = db.relationship('Subject', backref='lessons', lazy=True)
+
+    status = db.Column(db.String(20), default='auto', nullable=False)
+    memo = db.Column(db.Text, nullable=True)

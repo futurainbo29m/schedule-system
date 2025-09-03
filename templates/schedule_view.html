@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>時間割表示 - {{ period.name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>時間割表示: {{ period.name }}</h1> 
+            <nav class="nav-links">
+                <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+                <a href="{{ url_for('planner', period_id=period.id) }}">プランナー</a>
+                <span style="color: #ccc; margin-left: 15px;">|</span>
+                <a href="{{ url_for('contracts_input', period_id=period.id) }}">① 契約数設定</a>
+                <a href="{{ url_for('shift_input', period_id=period.id) }}">② シフト入力</a>
+                <a href="{{ url_for('schedule_view', period_id=period.id) }}" style="font-weight: bold;">③ 時間割表示</a>
+                <a href="{{ url_for('analysis', period_id=period.id) }}">④ 分析</a>
+            </nav>
+        </header>
+        <div class="controls-panel" style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                <div id="selector-group">
+                    <label for="view-type-select" style="font-weight: bold;">表示対象:</label>
+                    <select id="view-type-select">
+                        <option value="teacher">講師</option>
+                        <option value="student">生徒</option>
+                    </select>
+                    <select id="person-select" disabled>
+                        <option value="">選択してください</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="schedule-wrapper">
+            <div id="schedule-container"
+                 data-start-date="{{ period.start_date.isoformat() }}"
+                 data-end-date="{{ period.end_date.isoformat() }}">
+                <p>表示対象を選択してください。</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/schedule_view.js') }}"></script>
+</body>
+</html>

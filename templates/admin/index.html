@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理ダッシュボード</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .dashboard-menu {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .menu-card {
+            background: white;
+            padding: 25px;
+            border-radius: var(--border-radius);
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .menu-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .menu-card h2 {
+            margin-bottom: 15px;
+            color: var(--secondary-color);
+        }
+        .menu-card p {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .menu-card a {
+            text-decoration: none;
+            color: white;
+            background-color: var(--primary-color);
+            padding: 10px 25px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="page-header">
+            <h1>管理ダッシュボード</h1>
+            <nav class="nav-links">
+                <a href="{{ url_for('dashboard') }}">計画期間ダッシュボードへ戻る</a>
+            </nav>
+        </header>
+
+        <div class="dashboard-menu">
+            <div class="menu-card">
+                <h2>講師の管理</h2>
+                <p>講師の登録、担当科目の編集、削除を行います。</p>
+                <a href="{{ url_for('admin_teachers') }}">講師を管理する</a>
+            </div>
+            <div class="menu-card">
+                <h2>生徒の管理</h2>
+                <p>生徒の登録、学年の編集、削除を行います。</p>
+                <a href="{{ url_for('admin_students') }}">生徒を管理する</a>
+            </div>
+            <div class="menu-card">
+                <h2>科目の管理</h2>
+                <p>科目の追加、表示名、対象学年の編集を行います。</p>
+                <a href="{{ url_for('admin_subjects') }}">科目を管理する</a>
+            </div>
+            <div class="menu-card">
+                <h2>契約期間の管理</h2>
+                <p>「8月分」「夏季講習」などの契約期間を作成・編集します。</p>
+                <a href="{{ url_for('admin_contract_periods') }}">契約期間を管理する</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
