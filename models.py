@@ -1,8 +1,9 @@
-# models.py (契約レッスンとの直接連携を強化)
+# models.py (計画期間対応版)
 
 from extensions import db
 from datetime import date
 
+# (teacher_subjects, student_preferred_teachers 中間テーブルは変更なし)
 teacher_subjects = db.Table(
     'teacher_subjects',
     db.Column('teacher_id',
@@ -25,14 +26,18 @@ student_preferred_teachers = db.Table(
               db.ForeignKey('teacher.id'),
               primary_key=True))
 
+# --- ▼▼▼ ここからが今回の変更箇所 ▼▼▼ ---
 
+
+# --- 1. PlanningPeriod モデルを新設 ---
 class PlanningPeriod(db.Model):
     __tablename__ = 'planning_period'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
-    status = db.Column(db.String(20), default='planning', nullable=False)
+    status = db.Column(db.String(20), default='planning',
+                       nullable=False)  #例: 'planning', 'active', 'archived'
 
     requests = db.relationship('StudentRequest',
                                backref='planning_period',
@@ -41,51 +46,6 @@ class PlanningPeriod(db.Model):
 
     def __repr__(self):
         return f'<PlanningPeriod {self.name}>'
-
-
-class ContractPeriod(db.Model):
-    """契約期間（例: 8月分、夏季講習）を定義するモデル"""
-    __tablename__ = 'contract_period'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)
-    display_name = db.Column(db.String(50), nullable=True)
-    start_date = db.Column(db.Date, nullable=False)
-    end_date = db.Column(db.Date, nullable=False)
-    period_type = db.Column(db.String(20), default='regular', nullable=False)
-
-    contracted_lessons = db.relationship('ContractedLesson',
-                                         backref='contract_period',
-                                         lazy=True,
-                                         cascade="all, delete-orphan")
-
-    def __repr__(self):
-        return f'<ContractPeriod {self.name}>'
-
-
-class ContractedLesson(db.Model):
-    """生徒ごとの契約レッスン数（レッスン権利の元帳）を記録するモデル"""
-    __tablename__ = 'contracted_lesson'
-    id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer,
-                           db.ForeignKey('student.id'),
-                           nullable=False)
-    subject_id = db.Column(db.Integer,
-                           db.ForeignKey('subject.id'),
-                           nullable=False)
-    contract_period_id = db.Column(db.Integer,
-                                   db.ForeignKey('contract_period.id'),
-                                   nullable=False)
-    contracted_count = db.Column(db.Integer, default=1, nullable=False)
-
-    student = db.relationship('Student',
-                              backref='contracted_lessons',
-                              lazy=True)
-    subject = db.relationship('Subject',
-                              backref='contracted_lessons',
-                              lazy=True)
-    fulfilled_lessons = db.relationship('Lesson',
-                                        backref='contracted_lesson',
-                                        lazy=True)
 
 
 class Teacher(db.Model):
@@ -149,6 +109,7 @@ class Shift(db.Model):
                              nullable=False)
 
 
+# --- 2. StudentRequest モデルを修正 ---
 class StudentRequest(db.Model):
     __tablename__ = 'student_request'
     id = db.Column(db.Integer, primary_key=True)
@@ -160,12 +121,15 @@ class StudentRequest(db.Model):
     subject_id = db.Column(db.Integer,
                            db.ForeignKey('subject.id'),
                            nullable=False)
+    lessons = db.relationship('Lesson', backref='request', lazy=True)
 
+    # この行を追加
     planning_period_id = db.Column(db.Integer,
                                    db.ForeignKey('planning_period.id'),
                                    nullable=False)
 
 
+# --- 3. Assignment モデルを修正 ---
 class Assignment(db.Model):
     __tablename__ = 'assignment'
     id = db.Column(db.Integer, primary_key=True)
@@ -194,13 +158,14 @@ class Lesson(db.Model):
     assignment_id = db.Column(db.Integer,
                               db.ForeignKey('assignment.id'),
                               nullable=True)
-
-    contracted_lesson_id = db.Column(db.Integer,
-                                     db.ForeignKey('contracted_lesson.id'),
-                                     nullable=False)
+    request_id = db.Column(db.Integer,
+                           db.ForeignKey('student_request.id'),
+                           nullable=False)
 
     student = db.relationship('Student', backref='lessons', lazy=True)
     subject = db.relationship('Subject', backref='lessons', lazy=True)
 
-    status = db.Column(db.String(20), default='auto', nullable=False)
+    # ▼▼▼ 以下の2行を追加 ▼▼▼
+    status = db.Column(db.String(20), default='auto',
+                       nullable=False)  # 'auto' vs 'locked'
     memo = db.Column(db.Text, nullable=True)

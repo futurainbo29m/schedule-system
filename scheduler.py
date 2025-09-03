@@ -1,11 +1,10 @@
-# scheduler.py (新DB構造対応 最終版)
+# scheduler.py (レッスン単位ロック対応版)
 
-from models import (Teacher, Student, Shift, Subject, TimeSlot, Assignment,
-                    Lesson, PlanningPeriod, ContractedLesson)
-from sqlalchemy import func
+from models import Teacher, Student, StudentRequest, Shift, Subject, TimeSlot, Assignment, Lesson, PlanningPeriod
 from extensions import db
 from datetime import timedelta, datetime
 import random
+from sqlalchemy import func, and_
 
 
 class ScheduleGenerator:
@@ -22,7 +21,6 @@ class ScheduleGenerator:
         self.start_date = self.period.start_date
         self.end_date = self.period.end_date
 
-        # (ルール設定のログ表示部分は変更なし)
         self.subject_interval_rule_active = 'subject_interval_days' in self.options
         if self.subject_interval_rule_active:
             self.subject_interval_days = self.options.get(
@@ -48,6 +46,7 @@ class ScheduleGenerator:
         self.students = Student.query.all()
         self.time_slots = TimeSlot.query.all()
 
+        # 自動配置中のレッスン配置日を記録するための辞書
         self.lesson_placement_dates = {}
 
         self.shifts_map = self._load_shifts()
@@ -62,82 +61,105 @@ class ScheduleGenerator:
             shifts_map[key] = shift
         return shifts_map
 
+    # ▼▼▼ 修正点1: クリーンアップ処理の変更 ▼▼▼
     def _cleanup_existing_schedule(self):
         print("既存の自動生成レッスンをクリーンアップします (ロックされたレッスンは維持)...")
+
+        # 期間内で 'auto' ステータスのレッスンIDを取得
         auto_lessons_ids = [
             id_tuple[0]
             for id_tuple in db.session.query(Lesson.id).join(Assignment).
             filter(Assignment.date.between(self.start_date, self.end_date),
                    Lesson.status == 'auto').all()
         ]
+
         if auto_lessons_ids:
+            # 'auto' のレッスンを削除
             Lesson.query.filter(Lesson.id.in_(auto_lessons_ids)).delete(
                 synchronize_session=False)
+
+            # レッスンが空になったAssignmentを検索して削除
             empty_assignments = Assignment.query.filter(
                 Assignment.date.between(
                     self.start_date,
                     self.end_date)).filter(~Assignment.lessons.any()).all()
+
             if empty_assignments:
                 print(f"{len(empty_assignments)}個の空になったコマを削除します。")
                 for assign in empty_assignments:
                     db.session.delete(assign)
+
             db.session.commit()
 
     def generate(self):
         self._cleanup_existing_schedule()
 
-        print("全契約期間から未配置のレッスンを準備します...")
+        print("生徒のリクエストから未配置のレッスンを準備します...")
         lessons_to_create = self._prepare_lessons_to_create()
 
-        random.shuffle(lessons_to_create)
+        lessons_to_create.sort(key=lambda l_data: (
+            l_data['request'].priority != 'HIGH', l_data['request'].priority !=
+            'MEDIUM', l_data['request'].priority != 'LOW', random.random()))
 
         print(f"合計 {len(lessons_to_create)} 個のレッスンを割り当てます。")
 
         newly_created_assignments = {}
-        assigned_count_in_this_run = 0
 
         for i, lesson_data in enumerate(lessons_to_create):
             if (i + 1) % 10 == 0:
                 print(f"  ... {i + 1}/{len(lessons_to_create)} レッスン処理中")
 
-            # Lessonオブジェクトにcontracted_lesson_idを含めて生成
-            lesson = Lesson(
-                student_id=lesson_data['student_id'],
-                subject_id=lesson_data['subject_id'],
-                contracted_lesson_id=lesson_data['contracted_lesson_id'])
+            # Lessonインスタンスのstatusはデフォルトで 'auto' になる
+            lesson = Lesson(student_id=lesson_data['student_id'],
+                            subject_id=lesson_data['subject_id'],
+                            request_id=lesson_data['request_id'])
 
             best_slot = self._find_best_slot_for_lesson(lesson)
 
             if best_slot:
                 self._assign_lesson_to_slot(lesson, best_slot,
                                             newly_created_assignments)
-                assigned_count_in_this_run += 1
 
         db.session.commit()
 
         print("\n--- 自動配置完了 ---")
-        print(f"今回の実行で割り当て完了: {assigned_count_in_this_run}コマ")
-
-        final_unassigned_count = len(self._prepare_lessons_to_create())
-        print(f"全体の未配置レッスン数: {final_unassigned_count}コマ")
-
+        assigned_count = db.session.query(Lesson).join(Assignment).filter(
+            Assignment.date.between(self.start_date, self.end_date),
+            Lesson.status == 'auto').count()
+        print(f"割り当て完了: {assigned_count}コマ")
+        print(f"未配置: {len(lessons_to_create) - assigned_count}コマ")
         return {"status": "completed"}
 
+    # ▼▼▼ 修正点2: 未配置レッスンの計算方法を変更 ▼▼▼
     def _prepare_lessons_to_create(self):
-        """全契約レッスンから、未配置のレッスン権をリストアップする"""
+        # 期間内で 'locked' ステータスのレッスンを生徒・科目ごとに集計
+        locked_lessons_count = db.session.query(
+            Lesson.student_id, Lesson.subject_id,
+            func.count(Lesson.id)).join(Assignment).filter(
+                Assignment.date.between(self.start_date, self.end_date),
+                Lesson.status == 'locked').group_by(Lesson.student_id,
+                                                    Lesson.subject_id).all()
+
+        locked_map = {
+            (student_id, subject_id): count
+            for student_id, subject_id, count in locked_lessons_count
+        }
+
+        requests = StudentRequest.query.filter_by(
+            planning_period_id=self.period_id).all()
+
         lessons_to_create_list = []
+        for req in requests:
+            locked_count = locked_map.get((req.student_id, req.subject_id), 0)
+            lessons_to_create_count = req.requested_lessons - locked_count
 
-        all_contracted = ContractedLesson.query.options(
-            db.joinedload(ContractedLesson.fulfilled_lessons)).all()
-
-        for cl in all_contracted:
-            unfulfilled_count = cl.contracted_count - len(cl.fulfilled_lessons)
-            if unfulfilled_count > 0:
-                for _ in range(unfulfilled_count):
+            if lessons_to_create_count > 0:
+                for _ in range(lessons_to_create_count):
                     lessons_to_create_list.append({
-                        'student_id': cl.student_id,
-                        'subject_id': cl.subject_id,
-                        'contracted_lesson_id': cl.id  # ★どの契約に基づくかを明記
+                        'student_id': req.student_id,
+                        'subject_id': req.subject_id,
+                        'request_id': req.id,
+                        'request': req
                     })
         return lessons_to_create_list
 
@@ -145,6 +167,7 @@ class ScheduleGenerator:
         best_slot = None
         highest_score = -1
         possible_shifts = list(self.shifts_map.keys())
+        #random.shuffle(possible_shifts)
         possible_shifts.sort(key=lambda x: (x[1], x[2]))
         for key in possible_shifts:
             teacher_id, date, time_slot_id = key
@@ -186,13 +209,18 @@ class ScheduleGenerator:
     def _calculate_slot_score(self, lesson, teacher_id, candidate_date):
         score = 100
         if self.subject_interval_rule_active:
-            db_last_lesson_date = db.session.query(func.max(
+            # 1. データベースから最後に配置された日を取得
+            db_last_lesson_date = db.session.query(db.func.max(
                 Assignment.date)).join(Lesson).filter(
                     Lesson.student_id == lesson.student_id,
                     Lesson.subject_id == lesson.subject_id).scalar()
+
+            # 2. 今回の自動配置中に置かれた最後のレッスン日を取得
             student_subject_key = (lesson.student_id, lesson.subject_id)
             runtime_last_lesson_date = self.lesson_placement_dates.get(
                 student_subject_key)
+
+            # 3. DBと実行中の履歴の両方を比較して、より新しい日付を最終日とする
             last_lesson_date = None
             if db_last_lesson_date and runtime_last_lesson_date:
                 last_lesson_date = max(db_last_lesson_date,
@@ -215,6 +243,7 @@ class ScheduleGenerator:
         if self.preferred_teacher_rule_active:
             student = db.session.get(Student, lesson.student_id)
             preferred_teacher_ids = [t.id for t in student.preferred_teachers]
+
             if teacher_id in preferred_teacher_ids:
                 bonus = 0
                 if self.preferred_strength == 'weak': bonus = 20
@@ -223,26 +252,34 @@ class ScheduleGenerator:
                 score += bonus
         return score
 
+    # ▼▼▼ 修正点3: Assignment作成時にstatusを設定しない ▼▼▼
     def _assign_lesson_to_slot(self, lesson, slot_info,
                                newly_created_assignments):
         assignment_key = (slot_info['teacher_id'], slot_info['date'],
                           slot_info['time_slot_id'])
+
+        # 配置履歴を更新
         student_subject_key = (lesson.student_id, lesson.subject_id)
         self.lesson_placement_dates[student_subject_key] = slot_info['date']
+
         assignment = newly_created_assignments.get(assignment_key)
+
         if not assignment:
             assignment = Assignment.query.filter_by(
                 teacher_id=slot_info['teacher_id'],
                 date=slot_info['date'],
                 time_slot_id=slot_info['time_slot_id']).first()
+
         if assignment:
             if len(assignment.lessons) < 2:
                 assignment.lessons.append(lesson)
         else:
+            # Assignment作成時にstatusは不要になった
             assignment = Assignment(teacher_id=slot_info['teacher_id'],
                                     date=slot_info['date'],
                                     time_slot_id=slot_info['time_slot_id'])
             db.session.add(assignment)
             assignment.lessons.append(lesson)
             newly_created_assignments[assignment_key] = assignment
+
         db.session.add(lesson)

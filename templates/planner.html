@@ -34,37 +34,22 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
             display: flex; /* ★ displayをflexに変更 */
             flex-direction: column; /* ★ 要素を縦に並べる */
+            gap: 20px;
             overflow: hidden;
         }
-        .sidebar-section {
-            /* flex-shrink: 0; を削除 */
-            margin-bottom: 0px;
-        }
-
-        .sidebar-section.control-panel {
-            flex-shrink: 0; /* コントロールパネルは縮まないようにする */
-        }
-        
-        .sidebar-section.unassigned-container {
-            flex-grow: 1; /* ★このセクションが残りの高さを埋める */
+        .sidebar > .sidebar-section:first-child {
+            /* 最初のセクション（コントロールパネル） */
             display: flex;
             flex-direction: column;
-            min-height: 0; /* ★縮小計算を正しく行うため */
-            margin-bottom: 0; /* ★このセクションの下の余白は不要 */
         }
-        
-        .unassigned-list-wrapper {
-            flex-grow: 1; /* ★ラッパーが伸びるようにする */
-            overflow-y: auto;
-            padding-right: 10px;
-        }
-        
         .sidebar-section h3 {
             margin-bottom: 15px;
             border-bottom: 2px solid var(--border-color);
             padding-bottom: 10px;
             color: var(--secondary-color);
         }
+
+        /* ▼▼▼ ここからが今回の追加箇所 ▼▼▼ */
 
         /* --- 講師フィルターバー --- */
         .teacher-filter-bar {
@@ -76,17 +61,19 @@
             flex-wrap: nowrap;
             overflow-x: auto;
             min-height: 52px;
-            padding-bottom: 10px;
-            overflow-y: hidden;
+            /* ▼▼▼ 以下の2行を修正 ▼▼▼ */
+            padding-bottom: 10px;  /* 横スクロールバーのための余白を確保 */
+            overflow-y: hidden;    /* 縦スクロールを完全に禁止 */
         }
         .teacher-filter-btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 6px 15px;
-            min-height: 34px;
+            /* ▼▼▼ 縦の余白を調整 ▼▼▼ */
+            padding: 6px 15px; /* 上下の余白を少し増やす */
+            min-height: 34px;   /* 最小の高さを確保 */
             border: 1px solid var(--border-color);
-            border-radius: 17px;
+            border-radius: 17px; /* 高さに合わせて調整 */
             background-color: #f8f9fa;
             cursor: pointer;
             transition: all 0.2s;
@@ -172,9 +159,9 @@
             padding: 10px;
             border-radius: 5px;
             font-size: 0.9em;
-            pointer-events: none;
+            pointer-events: none; /* ツールチップ自体がマウスイベントを邪魔しないように */
             z-index: 1000;
-            white-space: pre-wrap;
+            white-space: pre-wrap; /* 改行を有効にする */
         }
 
         /* --- サイドバーのコントロールパネル --- */
@@ -182,53 +169,33 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-end;
-            gap: 0px;
+            gap: 30px; /* 要素間の余白 */
             flex-grow: 1;
-            margin-bottom: 10px;
         }
         #analysis-summary {
-            flex-grow: 1;
+            flex-grow: 1; /* 分析サマリーが可能な限り幅を取るように */
         }
         #analysis-summary p {
             margin-bottom: 0;
         }
         #open-auto-assign-modal-btn {
             margin-right: 15px;
-            flex-shrink: 0;
+            flex-shrink: 0; /* ボタンが縮まないようにする */
             font-weight: bold; 
-            background-color: var(--primary-color) ;
-            color: white;
-            font-size: 0.9em;
-            font-weight: bold;
-            padding: 12px 20px;
-            border-radius: 5px;
-            border: none;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        #open-auto-assign-modal-btn:hover {
-            background-color: #2980b9;
+            background-color: var(--primary-color) ; /* 背景色 (例: 赤色) */
+            color: white;              /* 文字色 (例: 白色) */
+            font-size: 0.9em;          /* 文字の大きさ */
+            font-weight: bold;         /* 文字の太さ */
+            padding: 12px 20px;         /* 内側の余白 (縦・横) */
+            border-radius: 5px;        /* 角の丸み */
+            border: none;              /* 枠線を消す */
         }
         
-        /* --- 未配置レッスンリスト --- */
+        /* --- 未配置レッスンリスト (前回からのスタイル) --- */
         #unassigned-lessons-list ul { list-style: none; padding-left: 0; }
         #unassigned-lessons-list li { padding: 8px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; margin-bottom: 5px; border: 1px solid var(--border-color); }
         #unassigned-lessons-list li:hover { background-color: #e9ecef; }
         #unassigned-lessons-list li.selected { background-color: var(--primary-color) !important; color: white; font-weight: bold; }
-        
-        /* --- 未配置レッスンリストの小見出し --- */
-        #unassigned-lessons-list h3 {
-            font-size: 1.0em; /* 親要素のフォントサイズに合わせる (h3のデフォルトより小さい) */
-            font-weight: bold;
-            color: #495057; 
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #dee2e6; /* 線を細く、色を薄く */
-        }
-        #unassigned-lessons-list h3:first-of-type {
-            margin-top: 0; /* 最初の小見出しの上マージンは不要 */
-        }
-
         /* --- 配置可能コマのハイライト --- */
         .schedule-table td.possible-slot {
             cursor: pointer;
@@ -236,20 +203,20 @@
         }
 
         /* 人数に応じた色の濃さ */
-        .possible-slot-dense-1 { background-color: #d4edda !important; }
+        .possible-slot-dense-1 { background-color: #d4edda !important; } /* 薄い緑 */
         .possible-slot-dense-2 { background-color: #b8e0c3 !important; }
         .possible-slot-dense-3 { background-color: #9cd4ac !important; }
-        .possible-slot-dense-4 { background-color: #80c895 !important; }
+        .possible-slot-dense-4 { background-color: #80c895 !important; } /* 濃い緑 */
 
         /* レッスン未選択時のシフトハイライト */
         .shift-highlight {
-            background-color: #e7f5ff;
+            background-color: #e7f5ff; /* 基本の薄い青 */
         }
         /* 人数に応じた色の濃さ (青ベース) */
-        .shift-highlight-dense-1 { background-color: #d0ebff !important; }
-        .shift-highlight-dense-2 { background-color: #a5d8ff !important; }
-        .shift-highlight-dense-3 { background-color: #74c0fc !important; }
-        .shift-highlight-dense-4 { background-color: #4dabf7 !important; }
+        .shift-highlight-dense-1 { background-color: #d0ebff !important; } /* 1人: 薄い青 */
+        .shift-highlight-dense-2 { background-color: #a5d8ff !important; } /* 2人 */
+        .shift-highlight-dense-3 { background-color: #74c0fc !important; } /* 3人 */
+        .shift-highlight-dense-4 { background-color: #4dabf7 !important; } /* 4人以上: 濃い青 */
 
         /* 空きコマの「+」マーク */
         .schedule-table td.empty-and-possible:not(.summary-slot)::after {
@@ -261,35 +228,21 @@
 
         /* 概要モードのコマがハイライトされた時の表示 */
         .schedule-table td.summary-slot.possible-slot {
-            line-height: 1.3;
+            line-height: 1.3; /* 行間を調整 */
         }
         .schedule-table td.summary-slot.empty-and-possible::after {
-            content: "\A+";
-            white-space: pre;
+            content: "\A+"; /* \A は改行を意味する */
+            white-space: pre; /* 改行を有効にする */
             font-size: 1.2em;
             color: #155724;
             font-weight: bold;
         }
 
-        .unassigned-student-group.focused {
-            background-color: #e7f5ff; /* 薄い青色 */
-            border-color: var(--primary-color);
-            border-width: 2px;
-        }
-        td.focused-student-lesson {
-            background-color: #fff3cd !important; /* 薄い黄色 */
-            box-shadow: inset 0 0 0 2px #ffc107;
-        }
-        td.other-student-lesson {
-            background-color: #f8f9fa; /* 薄いグレー */
-            color: #6c757d;
-        }
-
-        /* --- レッスン編集モーダル --- */
+        /* --- ▼▼▼ ★★★ レッスン編集モーダル用のスタイルを追加 ★★★ ▼▼▼ --- */
         #lesson-edit-modal-body .teacher-group {
             margin-bottom: 15px;
             border-bottom: 1px solid var(--border-color);
-            padding-bottom: 15px;
+            padding-bottom: 15px; /* ★余白を広げる */
         }
         #lesson-edit-modal-body .teacher-group:last-child {
             border-bottom: none;
@@ -299,16 +252,17 @@
         #lesson-edit-modal-body .teacher-name-header {
             font-weight: bold;
             color: var(--secondary-color);
-            margin-bottom: 12px;
-            font-size: 1.1em;
+            margin-bottom: 12px; /* ★余白を広げる */
+            font-size: 1.1em;      /* ★フォントサイズを大きく */
         }
         #lesson-edit-modal-body .lesson-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px;
+            padding: 12px; /* ★余白を広げる */
             border-radius: 4px;
         }
+        /* ★レッスン情報のテキストのスタイルを追加 */
         #lesson-edit-modal-body .lesson-item span {
             font-size: 1.4em;
         }
@@ -317,13 +271,14 @@
         }
         #lesson-edit-modal-body .lesson-actions button {
             margin-left: 8px;
-            padding: 6px 12px;
-            font-size: 1.1em;
+            padding: 6px 12px; /* ★ボタンを大きくする */
+            font-size: 1.1em;  /* ★文字を大きくする */
             cursor: pointer;
             border-radius: 5px;
             border: 1px solid var(--border-color);
         }
 
+        /* ★移動・削除ボタンの見た目を調整 */
         .edit-lesson-btn {
             background-color: var(--success-color);
             border-color: var(--success-color);
@@ -343,6 +298,7 @@
             border-color: #c82333;
         }
 
+        /* ★閉じるボタンのスタイルを調整 */
         #modal-close-btn {
             background-color: #6c757d;
             color: white;
@@ -365,14 +321,14 @@
             margin-top: 15px;
         }
 
-        /* --- レッスン入れ替えモーダル --- */
+        /* --- ▼▼▼ ★★★ レッスン入れ替えモーダル用のスタイルを追加 ★★★ ▼▼▼ --- */
         #lesson-swap-modal .modal-content {
             min-width: 380px;
-            max-width: 420px;
+            max-width: 420px; /* 最大幅を指定して横に広がりすぎないようにする */
         }
         #lesson-swap-modal .modal-content p {
-            margin-bottom: 15px;
-            line-height: 1.5;
+            margin-bottom: 15px; /* 説明文とボタンの間に余白を追加 */
+            line-height: 1.5;    /* 行間を少し広げて読みやすくする */
         }
         #lesson-swap-modal-body .swap-option {
             display: block;
@@ -405,9 +361,9 @@
             background-color: #5a6268;
         }
 
-        /* --- ルール違反コマのハイライト --- */
+        /* --- ▼▼▼ ★★★ ルール違反コマのハイライト用スタイルを追加 ★★★ ▼▼▼ --- */
         .schedule-table td.violation-slot {
-            background-color: #f8d7da !important;
+            background-color: #f8d7da !important; /* 薄い赤色 */
             border: 2px solid var(--danger-color) !important;
             color: var(--danger-color);
             font-weight: bold;
@@ -421,7 +377,7 @@
             cursor: pointer;
             transition: all 0.2s;
             font-size: 0.9em;
-            margin-left: auto;
+            margin-left: auto; /* 右端に配置 */
         }
         #lock-mode-toggle-btn.active {
             background-color: var(--danger-color);
@@ -444,13 +400,12 @@
             border: 1px solid #e0e0e0;
             background-color: #f9f9f9;
             margin-bottom: 2px;
-            font-size: 12px; 
-            color: #333;
-            cursor: default;
+            font-size: 11px;
+            cursor: default; /* 通常時はデフォルトカーソル */
             transition: all 0.2s;
         }
         .lock-mode-active .lesson-item {
-            cursor: pointer;
+            cursor: pointer; /* ロックモード時のみポインターカーソル */
         }
         .lock-mode-active .lesson-item:hover {
             background-color: #e9ecef;
@@ -481,62 +436,10 @@
         }
         .modal-actions {
             margin-top: 25px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            text-align: right;
         }
-        
-        #execute-auto-assign-btn {
-            background: #3498db;
-            border: none;
-            font-weight: bold;
-            padding: 10px 25px;
-            color: white;
-            font-size: 1.0rem;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            border-radius: 5px;
-        }
-        #execute-auto-assign-btn:hover {
-            background-color: #2980b9;
-        }
-
-        #cancel-auto-assign-btn {
-            background-color: #6c757d;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            transition: background-color 0.2s;
-            font-size: 1.0rem;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        #cancel-auto-assign-btn:hover {
-            background-color: #5a6268;
-        }
-
-        #auto-assign-modal input[type="number"],
-        #auto-assign-modal select {
-            padding: 8px 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 5px;
-            font-size: 0.95em;
-        }
-
-        /* --- ラベル用のCSS --- */
-        .lesson-label-small {
-            display: inline-flex;
-            align-items: center;
-            gap: 2px;
-            color: #555;
-            margin-top: 2px;
-        }
-        .label-period {
-            font-size: 1.0em;
-        }
-        .label-number {
-            font-size: 1.3em;
-            line-height: 1;
+        .modal-actions button {
+            margin-left: 10px;
         }
 
         /* --- トグルスイッチ --- */
@@ -599,17 +502,19 @@
         .student-name-header {
             font-weight: bold;
             margin-bottom: 7px;
+            /* ▼▼▼ ここから追加・修正 ▼▼▼ */
             display: flex;
-            justify-content: space-between;
+            justify-content: space-between; /* 両端に寄せる */
             align-items: center;
         }
         .student-name-header .student-name {
-            font-size: 0.95em;
+            font-size: 0.95em; /* フォントを少し小さく */
         }
         .student-name-header .lesson-count {
-            font-weight: normal;
+            font-weight: normal; /* 太字を解除 */
             font-size: 0.9em;
         }
+        /* ▲▲▲ ここまで追加・修正 ▲▲▲ */
         .subjects-container {
             padding-left: 15px;
             display: flex;
@@ -636,33 +541,52 @@
             border-color: var(--primary-color);
         }
 
+        /* --- サイドバーのスクロール対応（ウィンドウサイズ連動） --- */
         .sidebar {
+            /* ▼▼▼ この3行を追加 ▼▼▼ */
             display: flex;
             flex-direction: column;
         }
         .sidebar-section {
             min-height: 0;
         }
+        /* ▼▼▼ このクラスセレクタを追加 ▼▼▼ */
         .sidebar-section.flex-grow-section {
+            /* 3番目の行を埋めるこのセクションの内部レイアウト */
             display: flex;
             flex-direction: column;
         }
-
-        .teacher-filter-bar {
-            flex-wrap: nowrap;
-            overflow-x: auto;
-            padding-bottom: 10px;
+        #unassigned-lessons-list {
+            /* ▼▼▼ max-height を削除し、height: 100% に変更 ▼▼▼ */
+            height: 100%;
+            overflow-y: auto;
+            padding-right: 10px;
         }
-        
+
+        /* --- フィルターバーの横スクロール対応 --- */
+        .teacher-filter-bar {
+            flex-wrap: nowrap; /* ボタンの折り返しを禁止 */
+            overflow-x: auto;  /* 横方向にはみ出た場合にスクロールバーを表示 */
+            padding-bottom: 10px; /* スクロールバーのための余白 */
+        }
+
+        /* 見た目を整えるためのスクロールバーのスタイリング（任意） */
+        /* --- スクロールバーのスタイリング --- */
+        .teacher-filter-bar::-webkit-scrollbar { height: 6px; }
+        .teacher-filter-bar::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        .teacher-filter-bar::-webkit-scrollbar-thumb:hover { background: #999; }
+
+
+        /* --- 講師フィルターヘッダーのレイアウト --- */
         .filter-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 10px; /* ▼▼▼ タイトルの下の余白を確保 ▼▼▼ */
         }
         #lock-mode-toggle-btn {
-            flex-shrink: 0;
-            white-space: nowrap;
+            flex-shrink: 0; /* ▼▼▼ ボタンが縮まないようにする ▼▼▼ */
+            white-space: nowrap; /* ▼▼▼ ボタン内の改行を禁止 ▼▼▼ */
         }
     </style>
 </head>
@@ -674,7 +598,7 @@
             <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
                 <a href="{{ url_for('planner', period_id=period.id) }}" style="font-weight: bold;">プランナー</a>
                 <span style="color: #ccc; margin-left: 15px;">|</span>
-                <a href="{{ url_for('contracts_input', period_id=period.id) }}">① 契約数設定</a>
+                <a href="{{ url_for('requests_input', period_id=period.id) }}"">① 授業数設定</a>
                 <a href="{{ url_for('shift_input', period_id=period.id) }}">② シフト入力</a>
                 <a href="{{ url_for('schedule_view', period_id=period.id) }}">③ 時間割表示</a>
                 <a href="{{ url_for('analysis', period_id=period.id) }}">④ 分析</a>
@@ -699,7 +623,7 @@
             </main>
 
             <aside class="sidebar">
-                <div class="sidebar-section control-panel">
+                <div class="sidebar-section">
                     <h3>コントロールパネル</h3>
                     <div class="control-panel-content">
                         <div id="analysis-summary">
@@ -708,7 +632,7 @@
                         <button id="open-auto-assign-modal-btn" class="controls-panel button">自動配置</button>
                     </div>
                 </div>
-                <div class="sidebar-section unassigned-container">
+                <div class="sidebar-section flex-grow-section">
                     <h3>未配置レッスン</h3>
                     <div id="student-grade-filter-bar" class="teacher-filter-bar" style="margin-bottom: 10px; padding-bottom: 10px;">
                         <button class="teacher-filter-btn active" data-grade="all">全員</button>
@@ -721,11 +645,10 @@
                         <button class="teacher-filter-btn" data-grade="高3">高３</button>
                         <button class="teacher-filter-btn" data-grade="浪人">浪人</button>
                     </div>
-                <div class="unassigned-list-wrapper">
+
                     <div id="unassigned-lessons-list">
                         <p>読み込み中...</p>
                     </div>
-                </div>
                 </div>
             </aside>
         </div>
@@ -804,10 +727,10 @@
                     </select>
                 </div>
             </div>
-            
+
             <div class="modal-actions">
-                <button id="cancel-auto-assign-btn" class="controls-panel button">キャンセル</button>
                 <button id="execute-auto-assign-btn" class="controls-panel button">この設定で実行</button>
+                <button id="cancel-auto-assign-btn" class="button-secondary">キャンセル</button>
             </div>
         </div>
     </div>
@@ -820,4 +743,3 @@
     <script src="{{ url_for('static', filename='js/planner.js') }}"></script>
 </body>
 </html>
-

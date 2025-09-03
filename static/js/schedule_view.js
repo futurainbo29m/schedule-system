@@ -1,4 +1,4 @@
-// static/js/schedule_view.js (単一講師表示修正版)
+// static/js/schedule_view.js (計画期間ビュー対応版)
 
 document.addEventListener('DOMContentLoaded', () => {
     function showLoader(container) {
@@ -77,10 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const scheduleMap = {}; 
             result.assignments.forEach(assign => {
                 const key = `${assign.date}-${assign.time_slot_id}`;
-                if (!scheduleMap[key]) {
-                    scheduleMap[key] = [];
-                }
-                scheduleMap[key].push(assign);
+                scheduleMap[key] = assign;
             });
 
             const emptyShiftMap = {};
@@ -113,6 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const headerRow = thead.insertRow();
         headerRow.innerHTML = '<th class="time-header">時間</th>';
         
+        // 計画期間の開始日から終了日までループ
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
             const dayOfWeek = d.getDay();
             let dayClass = dayOfWeek === 0 ? 'sunday' : dayOfWeek === 6 ? 'saturday' : 'weekday';
@@ -130,43 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cell = row.insertCell();
 
                 if (scheduleMap[key]) {
-                    const assignments = scheduleMap[key];
+                    const assign = scheduleMap[key];
                     let cellContent = '';
-                    
                     if (viewType === 'teacher') {
-                        cellContent = assignments.map(assign => 
-                            assign.lessons.map(lesson => 
-                                `<div>${lesson.student_name}: ${lesson.subject_name.slice(0, 2)}</div>`
-                            ).join('')
-                        ).join('');
-
-                    } else { // 生徒表示の場合
-                        const myAssignments = assignments.filter(assign => 
-                            assign.lessons.some(l => l.student_id == selectedPersonId)
-                        );
-                        
-                        cellContent = myAssignments.map(assign => {
-                            const myLesson = assign.lessons.find(l => l.student_id == selectedPersonId);
-                            if (!myLesson) return '';
-                            
-                            let labelHTML = '';
-                            if (myLesson.label) {
-                                const labelParts = myLesson.label.split(' ');
-                                if (labelParts.length === 2) {
-                                    labelHTML = `
-                                        <br>
-                                        <span class="lesson-label-small">
-                                            <span class="label-period">${labelParts[0]}</span>
-                                            <span class="label-number">${labelParts[1]}</span>
-                                        </span>`;
-                                } else {
-                                    labelHTML = `<br><span class="lesson-label-small">${myLesson.label}</span>`;
-                                }
-                            }
-                            return `<div>${assign.teacher_name}: ${myLesson.subject_name.slice(0, 2)}${labelHTML}</div>`;
-                        }).join('');
+                        cellContent = assign.lessons.map(lesson => `${lesson.student_name}: ${lesson.subject_name.slice(0, 2)}`).join('<br>');
+                    } else {
+                        const myLesson = assign.lessons.find(lesson => lesson.student_id == selectedPersonId);
+                        if (myLesson) cellContent = `${assign.teacher_name}: ${myLesson.subject_name.slice(0, 2)}`;
                     }
-
                     if (cellContent) {
                         cell.innerHTML = cellContent;
                         cell.classList.add('assigned-slot');
@@ -192,7 +161,6 @@ document.addEventListener('DOMContentLoaded', () => {
             background-color: #fff3cd;
             font-size: 12px;
             line-height: 1.4;
-            align-items: center;   
             vertical-align: middle;
         }
         .schedule-table td.empty-shift-slot {
@@ -200,19 +168,6 @@ document.addEventListener('DOMContentLoaded', () => {
             font-size: 1.5em;
             font-weight: bold;
             vertical-align: middle;
-        }
-        .lesson-label-small {
-            display: inline-flex;
-            align-items: center;
-            gap: 2px;
-            color: #555;
-        }
-        .label-period {
-            font-size: 1.0em;
-        }
-        .label-number {
-            font-size: 1.3em;
-            line-height: 1;
         }
     `;
     document.head.appendChild(style);

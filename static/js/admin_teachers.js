@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 状態管理 ---
     let allSubjects = [];
-    let highSchoolSubjects = [];
+    let highSchoolSubjects = []; // ▼▼▼ 高校の科目のみを保持する配列を追加 ▼▼▼
     let currentEditingTeacherId = null;
 
     // --- 初期化処理 ---
@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.dataset.teacherId = teacher.id;
                 row.dataset.teacherName = teacher.name;
                 
+                // ▼▼▼【変更点2】担当科目IDをdata属性として行に保存しておく ▼▼▼
                 row.dataset.subjectIds = JSON.stringify(subjectIds);
 
                 row.innerHTML = `
@@ -103,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentEditingTeacherId = teacherId;
         modalTeacherName.textContent = `${teacherName} の担当科目を編集`;
         
+        // ▼▼▼【変更点3】高校の科目のみをモーダルに表示する ▼▼▼
         renderSubjectButtons(modalSubjectsContainer, highSchoolSubjects, currentSubjectIds);
         
         modal.classList.add('visible');
@@ -169,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('講師名と表示名は必須です。'); return;
             }
             try {
+                // ▼▼▼【変更点4】全ての情報をまとめて送信する ▼▼▼
                 const response = await fetch(`/api/teachers/${teacherId}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -216,6 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // ▼▼▼【変更点5】モーダルの「適用」ボタンの処理 ▼▼▼
     modalApplyBtn.addEventListener('click', () => {
         if (!currentEditingTeacherId) return;
 

@@ -1,50 +1,10 @@
-# app.py (旧requests機能を完全に削除した最終版)
+# app.py (レッスンロックAPI対応・期間指定ルーティング対応版)
 
 from flask import Flask, render_template, jsonify, request, redirect, url_for
 import os
 from datetime import datetime, date, timedelta
-from collections import defaultdict
 
 from extensions import db
-from models import (Teacher, Shift, TimeSlot, Assignment, Subject, Student,
-                    Lesson, PlanningPeriod, ContractPeriod, ContractedLesson)
-from scheduler import ScheduleGenerator
-from sqlalchemy import func, tuple_
-
-
-def to_circled_number(n):
-    """1から20までの数字を丸数字のUnicode文字に変換する"""
-    if not 1 <= n <= 20:
-        return f"({n})"
-    return chr(0x245F + n)
-
-
-def _calculate_and_apply_lesson_labels():
-    """
-    レッスンの消化状況を計算し、表示用ラベルと所属契約期間IDのマップを返す。
-    """
-    lesson_labels = {}
-
-    # 契約済みの各レッスン権利(ContractedLesson)ごとに処理
-    all_contracted_lessons = ContractedLesson.query.options(
-        db.joinedload(
-            ContractedLesson.fulfilled_lessons).joinedload(Lesson.assignment),
-        db.joinedload(ContractedLesson.contract_period)).all()
-
-    for cl in all_contracted_lessons:
-        # この契約レッスンに紐づく、配置済みのレッスンを日付順にソート
-        sorted_fulfilled = sorted(
-            [l for l in cl.fulfilled_lessons if l.assignment],
-            key=lambda l: (l.assignment.date, l.assignment.time_slot_id))
-
-        # ソートされた順に番号を振る
-        for i, lesson in enumerate(sorted_fulfilled):
-            period = cl.contract_period
-            label_period = period.display_name or period.name
-            lesson_labels[
-                lesson.id] = f"{label_period} {to_circled_number(i + 1)}"
-
-    return lesson_labels
 
 
 def create_app():
@@ -56,6 +16,9 @@ def create_app():
 
     db.init_app(app)
 
+    from models import Teacher, Shift, TimeSlot, Assignment, Subject, Student, Lesson, StudentRequest, PlanningPeriod
+    from scheduler import ScheduleGenerator
+
     @app.route('/')
     def index():
         return redirect(url_for('dashboard'))
@@ -65,13 +28,6 @@ def create_app():
         periods = PlanningPeriod.query.order_by(
             PlanningPeriod.start_date.desc()).all()
         return render_template('dashboard.html', periods=periods)
-
-    @app.route('/period/<int:period_id>/contracts')
-    def contracts_input(period_id):
-        period = db.session.get(PlanningPeriod, period_id)
-        if not period:
-            return "指定された計画期間が見つかりません。", 404
-        return render_template('contracts.html', period=period)
 
     @app.route('/period/<int:period_id>/shifts')
     def shift_input(period_id):
@@ -89,10 +45,205 @@ def create_app():
 
     @app.route('/period/<int:period_id>/analysis')
     def analysis(period_id):
-        period = db.session.get(PlanningPeriod, period_id)
-        if not period:
-            return "指定された計画期間が見つかりません。", 404
-        return render_template('analysis.html', period=period)
+        try:
+            period = db.session.get(PlanningPeriod, period_id)
+            if not period:
+                return "指定された計画期間が見つかりません。", 404
+
+            start_date = period.start_date
+            end_date = period.end_date
+
+            # --- ここから get_analysis_data のロジックを移動 ---
+            all_shifts = Shift.query.filter(
+                Shift.date.between(start_date, end_date)).all()
+            all_assignments = Assignment.query.filter(
+                Assignment.date.between(start_date, end_date)).all()
+
+            # StudentRequestも期間で絞り込むように修正
+            all_requests = StudentRequest.query.filter_by(
+                planning_period_id=period_id).all()
+
+            assigned_lessons = Lesson.query.join(Assignment).filter(
+                Assignment.date.between(start_date, end_date)).all()
+
+            total_shifts = len(all_shifts)
+            total_requests_count = db.session.query(
+                db.func.sum(StudentRequest.requested_lessons)).filter_by(
+                    planning_period_id=period_id).scalar() or 0
+            total_assigned_lessons = len(assigned_lessons)
+            shift_assignment_rate = (len(all_assignments) / total_shifts *
+                                     100) if total_shifts > 0 else 0
+            lesson_fulfillment_rate = (total_assigned_lessons /
+                                       total_requests_count *
+                                       100) if total_requests_count > 0 else 0
+
+            summary = {
+                'total_shifts': total_shifts,
+                'total_requests': total_requests_count,
+                'shift_assignment_rate': round(shift_assignment_rate, 1),
+                'lesson_fulfillment_rate': round(lesson_fulfillment_rate, 1)
+            }
+
+            teacher_report = []
+            teachers = Teacher.query.all()
+            for teacher in teachers:
+                teacher_shifts = [
+                    s for s in all_shifts if s.teacher_id == teacher.id
+                ]
+                teacher_assignments = [
+                    a for a in all_assignments if a.teacher_id == teacher.id
+                ]
+                shift_count = len(teacher_shifts)
+                assignment_count = len(teacher_assignments)
+                assignment_rate = (assignment_count / shift_count *
+                                   100) if shift_count > 0 else 0
+                teacher_report.append({
+                    'name':
+                    teacher.name,
+                    'shift_count':
+                    shift_count,
+                    'assignment_count':
+                    assignment_count,
+                    'assignment_rate':
+                    round(assignment_rate, 1)
+                })
+
+            unfulfilled_report = []
+            students = get_sorted_students()
+            for student in students:
+                student_requests = [
+                    r for r in all_requests if r.student_id == student.id
+                ]
+                student_lessons = [
+                    l for l in assigned_lessons if l.student_id == student.id
+                ]
+                for req in student_requests:
+                    fulfilled_count = len([
+                        l for l in student_lessons
+                        if l.subject_id == req.subject_id
+                    ])
+                    unfulfilled_count = req.requested_lessons - fulfilled_count
+                    if unfulfilled_count > 0:
+                        subject = db.session.get(Subject, req.subject_id)
+                        unfulfilled_report.append({
+                            'student_name':
+                            student.name,
+                            'subject_name':
+                            subject.name,
+                            'unfulfilled_count':
+                            unfulfilled_count
+                        })
+
+            time_slot_distribution = {ts.id: 0 for ts in TimeSlot.query.all()}
+            weekday_distribution = {i: 0 for i in range(7)}
+            subject_fulfillment = {}
+
+            for assignment in all_assignments:
+                time_slot_distribution[assignment.time_slot_id] += len(
+                    assignment.lessons)
+                weekday = assignment.date.weekday()
+                weekday_distribution[weekday] += len(assignment.lessons)
+
+            for subject in Subject.query.all():
+                requested = sum(r.requested_lessons for r in all_requests
+                                if r.subject_id == subject.id)
+                fulfilled = len([
+                    l for l in assigned_lessons if l.subject_id == subject.id
+                ])
+                fulfillment_rate = (fulfilled / requested *
+                                    100) if requested > 0 else 100
+                subject_fulfillment[subject.name] = round(fulfillment_rate, 1)
+
+            student_fulfillment_report = []
+            all_subjects = Subject.query.all()  # 科目リストを取得
+            for student in students:
+                # 生徒ごとの総リクエスト数を集計
+                total_requested = sum(r.requested_lessons for r in all_requests
+                                      if r.student_id == student.id)
+                if total_requested == 0:
+                    continue  # リクエストがない生徒はレポートに含めない
+
+                # 生徒ごとの総消化数を集計
+                total_fulfilled = len([
+                    l for l in assigned_lessons if l.student_id == student.id
+                ])
+
+                # 消化率を計算
+                fulfillment_rate = (total_fulfilled / total_requested *
+                                    100) if total_requested > 0 else 0
+
+                subject_details = []
+                student_reqs_list = [
+                    r for r in all_requests if r.student_id == student.id
+                ]
+                student_lessons_list = [
+                    l for l in assigned_lessons if l.student_id == student.id
+                ]
+
+                for subject in all_subjects:
+                    requested_count = sum(r.requested_lessons
+                                          for r in student_reqs_list
+                                          if r.subject_id == subject.id)
+                    fulfilled_count = len([
+                        l for l in student_lessons_list
+                        if l.subject_id == subject.id
+                    ])
+
+                    # リクエストがあった科目のみ詳細に含める
+                    if requested_count > 0:
+                        subject_details.append({
+                            'subject_name':
+                            subject.name,
+                            'requested':
+                            requested_count,
+                            'fulfilled':
+                            fulfilled_count,
+                            'is_unfulfilled':
+                            fulfilled_count < requested_count
+                        })
+
+                student_fulfillment_report.append({
+                    'student_name':
+                    student.name,
+                    'total_requested':
+                    total_requested,
+                    'total_fulfilled':
+                    total_fulfilled,
+                    'fulfillment_rate':
+                    round(fulfillment_rate, 1),
+                    'subject_details':
+                    subject_details
+                })
+
+            analysis_data = {
+                'summary':
+                summary,
+                'teacher_report':
+                sorted(teacher_report,
+                       key=lambda x: x['assignment_rate'],
+                       reverse=True),
+                'unfulfilled_report':
+                sorted(unfulfilled_report, key=lambda x: x['student_name']),
+                'student_fulfillment_report':
+                student_fulfillment_report,
+                'time_slot_distribution':
+                time_slot_distribution,
+                'weekday_distribution':
+                weekday_distribution,
+                'subject_fulfillment':
+                subject_fulfillment
+            }
+            # --- ここまでが get_analysis_data のロジック ---
+
+            return render_template('analysis.html',
+                                   period=period,
+                                   analysis_data=analysis_data)
+
+        except Exception as e:
+            app.logger.error(f"Error in analysis: {e}")
+            import traceback
+            traceback.print_exc()
+            return "分析データの生成中にエラーが発生しました。", 500
 
     @app.route('/planner/<int:period_id>')
     def planner(period_id):
@@ -105,10 +256,6 @@ def create_app():
     @app.route('/admin')
     def admin_dashboard():
         return render_template('admin/index.html')
-
-    @app.route('/admin/contract-periods')
-    def admin_contract_periods():
-        return render_template('admin/contract_periods.html')
 
     @app.route('/admin/teachers')
     def admin_teachers():
@@ -125,55 +272,14 @@ def create_app():
     def admin_subjects():
         return render_template('admin/subjects.html')
 
+    @app.route('/period/<int:period_id>/requests')
+    def requests_input(period_id):
+        period = db.session.get(PlanningPeriod, period_id)
+        if not period:
+            return "指定された計画期間が見つかりません。", 404
+        return render_template('requests.html', period=period)
+
     # --- API ---
-
-    @app.route('/api/contracted-lessons', methods=['GET'])
-    def get_all_contracted_lessons():
-        try:
-            lessons = ContractedLesson.query.all()
-            lesson_map = {
-                f"{l.student_id}-{l.subject_id}-{l.contract_period_id}":
-                l.contracted_count
-                for l in lessons
-            }
-            return jsonify(lesson_map)
-        except Exception as e:
-            app.logger.error(f"Error getting all contracted lessons: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/contracted-lessons/batch_update', methods=['POST'])
-    def batch_update_contracted_lessons():
-        try:
-            data = request.get_json()
-            payload = data.get('payload', {})
-
-            for key, count in payload.items():
-                student_id, subject_id, contract_period_id = map(
-                    int, key.split('-'))
-                lesson = ContractedLesson.query.filter_by(
-                    student_id=student_id,
-                    subject_id=subject_id,
-                    contract_period_id=contract_period_id).first()
-
-                if count > 0:
-                    if lesson:
-                        lesson.contracted_count = count
-                    else:
-                        new_lesson = ContractedLesson(
-                            student_id=student_id,
-                            subject_id=subject_id,
-                            contract_period_id=contract_period_id,
-                            contracted_count=count)
-                        db.session.add(new_lesson)
-                elif lesson:
-                    db.session.delete(lesson)
-
-            db.session.commit()
-            return jsonify({'message': '契約レッスン数を保存しました。'})
-        except Exception as e:
-            db.session.rollback()
-            app.logger.error(f"Error in batch_update_contracted_lessons: {e}")
-            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/planning-periods', methods=['GET'])
     def get_planning_periods():
@@ -541,6 +647,54 @@ def create_app():
             app.logger.error(f"Error in delete_student: {e}")
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/requests', methods=['GET'])
+    def get_requests():
+        try:
+            period_id = request.args.get('planning_period_id', type=int)
+            if not period_id:
+                return jsonify({'error': '計画期間IDを指定してください。'}), 400
+
+            requests = StudentRequest.query.filter_by(
+                planning_period_id=period_id).all()
+            requests_map = {
+                f"{req.student_id}-{req.subject_id}": req.requested_lessons
+                for req in requests
+            }
+            return jsonify(requests_map)
+        except Exception as e:
+            app.logger.error(f"Error in get_all_requests: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/requests/batch_update', methods=['POST'])
+    def batch_update_requests():
+        try:
+            data = request.get_json()
+            period_id = data.get('planning_period_id')
+            payload = data.get('payload', {})
+
+            if not period_id:
+                return jsonify({'error': '計画期間IDを指定してください。'}), 400
+
+            StudentRequest.query.filter_by(
+                planning_period_id=period_id).delete()
+
+            for key, count in payload.items():
+                if int(count) > 0:
+                    student_id, subject_id = key.split('-')
+                    new_request = StudentRequest(student_id=int(student_id),
+                                                 subject_id=int(subject_id),
+                                                 requested_lessons=int(count),
+                                                 priority='MEDIUM',
+                                                 planning_period_id=period_id)
+                    db.session.add(new_request)
+
+            db.session.commit()
+            return jsonify({'message': 'レッスン数の設定を保存しました。'})
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f"Error in batch_update_requests: {e}")
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/shifts/<int:teacher_id>', methods=['GET'])
     def get_shifts(teacher_id):
         try:
@@ -609,7 +763,6 @@ def create_app():
     @app.route('/api/schedule', methods=['GET'])
     def get_schedule():
         try:
-            lesson_labels = _calculate_and_apply_lesson_labels()
             period_id = request.args.get('period_id', type=int)
             if not period_id:
                 return jsonify({'error': '計画期間IDを指定してください。'}), 400
@@ -664,14 +817,9 @@ def create_app():
                 for lesson in assign.lessons:
                     if student_id and lesson.student_id != student_id: continue
                     lessons_list.append({
-                        "student_id":
-                        lesson.student.id,
-                        "student_name":
-                        lesson.student.display_name,
-                        "subject_name":
-                        lesson.subject.name,
-                        "label":
-                        lesson_labels.get(lesson.id, None)
+                        "student_id": lesson.student.id,
+                        "student_name": lesson.student.display_name,
+                        "subject_name": lesson.subject.name
                     })
                 if not lessons_list: continue
                 result_data.append({
@@ -692,6 +840,58 @@ def create_app():
             traceback.print_exc()
             return jsonify({'error': str(e)}), 500
 
+    @app.route(
+        '/api/period/<int:period_id>/student/<int:student_id>/request-details',
+        methods=['GET'])
+    def get_student_request_details(period_id, student_id):
+        """指定された生徒の、学年に合った科目リストと現在の希望数を返す"""
+        try:
+            student = db.session.get(Student, student_id)
+            if not student:
+                return jsonify({'error': '生徒が見つかりません。'}), 404
+
+            # 生徒の学年に基づいて対象となる科目のレベルを決定
+            target_level = '高校'  # デフォルトは高校
+            if student.grade.startswith('小'):
+                target_level = '小学'
+            elif student.grade.startswith('中'):
+                target_level = '中学'
+
+            # 対象レベルの全科目を取得
+            subjects = Subject.query.filter_by(level=target_level).order_by(
+                Subject.id).all()
+
+            # この生徒の現在の希望数を取得
+            requests = StudentRequest.query.filter_by(
+                planning_period_id=period_id, student_id=student_id).all()
+            requests_map = {
+                req.subject_id: req.requested_lessons
+                for req in requests
+            }
+
+            # フロントエンドに返すデータを整形
+            subject_details = []
+            for sub in subjects:
+                subject_details.append({
+                    'id':
+                    sub.id,
+                    'name':
+                    sub.name,
+                    'requested_lessons':
+                    requests_map.get(sub.id, 0)  # 希望数がなければ0
+                })
+
+            return jsonify({
+                'student_name': student.name,
+                'subjects': subject_details
+            })
+
+        except Exception as e:
+            app.logger.error(f"Error in get_student_request_details: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
     # --- Planner APIs ---
 
     @app.route('/api/planner-data/<int:period_id>', methods=['GET'])
@@ -701,9 +901,6 @@ def create_app():
             if not period:
                 return jsonify({'error': '計画期間が見つかりません。'}), 404
 
-            lesson_labels = _calculate_and_apply_lesson_labels()
-
-            # --- 1. 配置済みレッスンの取得 (計画期間内のみ) ---
             assignments = Assignment.query.options(
                 db.joinedload(Assignment.lessons).joinedload(Lesson.student),
                 db.joinedload(Assignment.lessons).joinedload(Lesson.subject),
@@ -725,91 +922,15 @@ def create_app():
                         "student_id": lesson.student_id,
                         "student_name": lesson.student.display_name,
                         "subject_id": lesson.subject_id,
-                        "subject_name": lesson.subject.name,
-                        "label": lesson_labels.get(lesson.id)
+                        "subject_name": lesson.subject.name
                     })
+
                 assignments_data[key].append({
                     "teacher_id": assign.teacher_id,
                     "teacher_name": assign.teacher.display_name,
                     "lessons": lessons_list
                 })
 
-            # --- 2. 未配置レッスンの計算 (新ロジック) ---
-            unassigned_lessons = {"regular": [], "special": []}
-
-            # 全ての契約レッスンを取得
-            all_contracted = ContractedLesson.query.options(
-                db.joinedload(ContractedLesson.student),
-                db.joinedload(ContractedLesson.subject),
-                db.joinedload(ContractedLesson.contract_period),
-                db.joinedload(ContractedLesson.fulfilled_lessons)).all()
-
-            regular_unassigned_map = defaultdict(int)
-
-            for cl in all_contracted:
-                unfulfilled_count = cl.contracted_count - len(
-                    cl.fulfilled_lessons)
-                if unfulfilled_count <= 0:
-                    continue
-
-                student = cl.student
-                subject = cl.subject
-
-                lesson_info_base = {
-                    "student_id": student.id,
-                    "subject_id": subject.id,
-                    "student_name": student.name,
-                    "student_grade": student.grade,
-                    "subject_name": subject.name
-                }
-
-                if cl.contract_period.period_type == 'special':
-                    # 特別期間の場合：未消化分を個別のレッスン権として生成
-                    sp_group = next(
-                        (g for g in unassigned_lessons["special"]
-                         if g["period_id"] == cl.contract_period_id), None)
-                    if not sp_group:
-                        sp_group = {
-                            "period_id":
-                            cl.contract_period_id,
-                            "period_name":
-                            cl.contract_period.display_name
-                            or cl.contract_period.name,
-                            "lessons": []
-                        }
-                        unassigned_lessons["special"].append(sp_group)
-
-                    for _ in range(unfulfilled_count):
-                        sp_group["lessons"].append({
-                            **lesson_info_base, "contracted_lesson_id":
-                            cl.id
-                        })
-                else:  # regular
-                    # 通常期間の場合：生徒と科目の組み合わせで合算
-                    key = f"{student.id}-{subject.id}"
-                    regular_unassigned_map[key] += unfulfilled_count
-
-            # 合算した通常未配置レッスンを整形
-            for key, count in regular_unassigned_map.items():
-                student_id, subject_id = map(int, key.split('-'))
-                student = db.session.get(Student, student_id)
-                subject = db.session.get(Subject, subject_id)
-                unassigned_lessons["regular"].append({
-                    "count":
-                    count,
-                    "student_id":
-                    student.id,
-                    "subject_id":
-                    subject.id,
-                    "student_name":
-                    student.name,
-                    "student_grade":
-                    student.grade,
-                    "subject_name":
-                    subject.name
-                })
-
-            # --- 3. シフトと講師情報の取得 (変更なし) ---
             shifts = Shift.query.filter(
                 Shift.date.between(period.start_date, period.end_date)).all()
             shifts_map = {
@@ -817,6 +938,35 @@ def create_app():
                 True
                 for s in shifts
             }
+
+            requests = StudentRequest.query.filter_by(
+                planning_period_id=period_id).all()
+            unassigned_map = {}
+            for req in requests:
+                key = f"{req.student_id}-{req.subject_id}"
+                if key not in unassigned_map:
+                    student = db.session.get(Student, req.student_id)
+                    subject = db.session.get(Subject, req.subject_id)
+                    unassigned_map[key] = {
+                        "count": 0,
+                        "student_id": req.student_id,
+                        "subject_id": req.subject_id,
+                        "student_name": student.name if student else "不明",
+                        "student_grade": student.grade if student else "不明",
+                        "subject_name": subject.name if subject else "不明"
+                    }
+                unassigned_map[key]["count"] += req.requested_lessons
+
+            for assignments_in_slot in assignments_data.values():
+                for assign in assignments_in_slot:
+                    for lesson in assign['lessons']:
+                        key = f"{lesson['student_id']}-{lesson['subject_id']}"
+                        if key in unassigned_map:
+                            unassigned_map[key]["count"] -= 1
+
+            unassigned_lessons = [
+                v for v in unassigned_map.values() if v['count'] > 0
+            ]
 
             teachers = Teacher.query.options(db.joinedload(
                 Teacher.subjects)).all()
@@ -827,8 +977,6 @@ def create_app():
                 'subject_ids': [s.id for s in t.subjects]
             } for t in teachers]
 
-            sorted_students = get_sorted_students()
-
             return jsonify({
                 'period': {
                     'id': period.id,
@@ -836,18 +984,12 @@ def create_app():
                     'start_date': period.start_date.isoformat(),
                     'end_date': period.end_date.isoformat()
                 },
-                'assignments':
-                assignments_data,
-                'shifts':
-                shifts_map,
-                'unassigned_lessons':
-                unassigned_lessons,
-                'teachers':
-                teachers_data,
-                'sorted_students': [{
-                    'id': s.id
-                } for s in sorted_students]
+                'assignments': assignments_data,
+                'shifts': shifts_map,
+                'unassigned_lessons': unassigned_lessons,
+                'teachers': teachers_data
             })
+
         except Exception as e:
             app.logger.error(f"Error in get_planner_data: {e}")
             import traceback
@@ -859,39 +1001,36 @@ def create_app():
         try:
             data = request.get_json()
             required_keys = [
-                'student_id', 'subject_id', 'teacher_id', 'date',
+                'period_id', 'student_id', 'subject_id', 'teacher_id', 'date',
                 'time_slot_id'
             ]
             if not all(key in data for key in required_keys):
                 return jsonify({'error': 'リクエストに必要な情報が不足しています。'}), 400
 
-            student_id = data['student_id']
-            subject_id = data['subject_id']
-            contracted_lesson_id = data.get('contracted_lesson_id')
+            lesson_to_delete_id = data.get('lesson_to_delete_id')
+            if lesson_to_delete_id:
+                lesson_to_delete = db.session.get(Lesson,
+                                                  int(lesson_to_delete_id))
+                if lesson_to_delete:
+                    # 追い出されるレッスンが所属していたコマを取得
+                    original_assignment = lesson_to_delete.assignment
 
-            # contracted_lesson_idがフロントから送られてこない（＝通常レッスンの）場合
-            if not contracted_lesson_id:
-                # 消化可能な通常契約レッスンを探す
-                available_regular_contract = ContractedLesson.query.join(
-                    ContractPeriod).filter(
-                        ContractedLesson.student_id == student_id,
-                        ContractedLesson.subject_id == subject_id,
-                        ContractPeriod.period_type == 'regular').all()
+                    db.session.delete(lesson_to_delete)
 
-                target_cl = None
-                for cl in available_regular_contract:
-                    if cl.contracted_count > len(cl.fulfilled_lessons):
-                        target_cl = cl
-                        break
-
-                if not target_cl:
-                    return jsonify({'error': '配置可能な通常契約レッスンが見つかりません。'}), 400
-
-                contracted_lesson_id = target_cl.id
+                    # 追い出しによってコマが空になる場合は、そのコマも削除する
+                    if original_assignment and not original_assignment.lessons:
+                        db.session.delete(original_assignment)
 
             date_obj = datetime.strptime(data['date'], '%Y-%m-%d').date()
             teacher_id = int(data['teacher_id'])
             time_slot_id = int(data['time_slot_id'])
+
+            student_request = StudentRequest.query.filter_by(
+                planning_period_id=data['period_id'],
+                student_id=data['student_id'],
+                subject_id=data['subject_id']).first()
+            if not student_request:
+                return jsonify({'error': '対応する授業リクエストが見つかりません。'}), 404
 
             assignment = Assignment.query.filter_by(
                 teacher_id=teacher_id,
@@ -904,24 +1043,13 @@ def create_app():
                                         time_slot_id=time_slot_id)
                 db.session.add(assignment)
 
-            new_lesson = Lesson(student_id=student_id,
-                                subject_id=subject_id,
+            new_lesson = Lesson(student_id=data['student_id'],
+                                subject_id=data['subject_id'],
+                                request_id=student_request.id,
                                 assignment=assignment,
                                 status='locked',
-                                memo='手動で配置',
-                                contracted_lesson_id=contracted_lesson_id)
+                                memo='手動で配置')
             db.session.add(new_lesson)
-
-            lesson_to_delete_id = data.get('lesson_to_delete_id')
-            if lesson_to_delete_id:
-                lesson_to_delete = db.session.get(Lesson,
-                                                  int(lesson_to_delete_id))
-                if lesson_to_delete:
-                    original_assignment = lesson_to_delete.assignment
-                    db.session.delete(lesson_to_delete)
-                    if original_assignment and not original_assignment.lessons:
-                        db.session.delete(original_assignment)
-
             db.session.commit()
 
             return jsonify({'message': 'レッスンを配置しました。'})
@@ -938,11 +1066,12 @@ def create_app():
         try:
             data = request.get_json()
             period_id = data.get('period_id')
-            options = data.get('options', {})
+            options = data.get('options', {})  # ▼▼▼ フロントからoptionsを受け取る ▼▼▼
             if not period_id:
                 return jsonify({'error': '計画期間IDが指定されていません。'}), 400
 
             with app.app_context():
+                # ▼▼▼ 受け取ったoptionsをスケジューラに渡す ▼▼▼
                 generator = ScheduleGenerator(period_id, options)
                 result = generator.generate()
 
@@ -1053,357 +1182,6 @@ def create_app():
         except Exception as e:
             db.session.rollback()
             app.logger.error(f"Error in toggle_lesson_lock: {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/contract-periods', methods=['GET', 'POST'])
-    def handle_contract_periods():
-        if request.method == 'POST':
-            try:
-                data = request.get_json()
-                if not data or not data.get('name') or not data.get(
-                        'start_date') or not data.get('end_date'):
-                    return jsonify({'error': 'すべてのフィールドを入力してください。'}), 400
-
-                start_date = datetime.strptime(data['start_date'],
-                                               '%Y-%m-%d').date()
-                end_date = datetime.strptime(data['end_date'],
-                                             '%Y-%m-%d').date()
-
-                new_period = ContractPeriod(
-                    name=data['name'],
-                    display_name=data.get('display_name'),
-                    start_date=start_date,
-                    end_date=end_date,
-                    period_type=data.get('period_type', 'regular'))
-                db.session.add(new_period)
-                db.session.commit()
-                return jsonify({'message':
-                                f"'{new_period.name}' を作成しました。"}), 201
-            except Exception as e:
-                db.session.rollback()
-                if 'UNIQUE constraint failed' in str(e):
-                    return jsonify({'error': '同じ名前の契約期間が既に存在します。'}), 409
-                return jsonify({'error': str(e)}), 500
-
-        try:
-            periods = ContractPeriod.query.order_by(
-                ContractPeriod.start_date.desc()).all()
-            return jsonify([{
-                'id': p.id,
-                'name': p.name,
-                'display_name': p.display_name,
-                'start_date': p.start_date.isoformat(),
-                'end_date': p.end_date.isoformat(),
-                'period_type': p.period_type
-            } for p in periods])
-        except Exception as e:
-            app.logger.error(f"Error getting contract periods: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/contract-periods/<int:period_id>',
-               methods=['PUT', 'DELETE'])
-    def handle_single_contract_period(period_id):
-        period = db.session.get(ContractPeriod, period_id)
-        if not period:
-            return jsonify({'error': '指定された契約期間が見つかりません。'}), 404
-
-        if request.method == 'PUT':
-            try:
-                data = request.get_json()
-                period.name = data.get('name', period.name)
-                period.display_name = data.get('display_name',
-                                               period.display_name)
-                if data.get('start_date'):
-                    period.start_date = datetime.strptime(
-                        data['start_date'], '%Y-%m-%d').date()
-                if data.get('end_date'):
-                    period.end_date = datetime.strptime(
-                        data['end_date'], '%Y-%m-%d').date()
-                if 'period_type' in data:
-                    period.period_type = data['period_type']
-                db.session.commit()
-                return jsonify({'message': '契約期間を更新しました。'})
-            except Exception as e:
-                db.session.rollback()
-                if 'UNIQUE constraint failed' in str(e):
-                    return jsonify({'error': '同じ名前の契約期間が既に存在します。'}), 409
-                return jsonify({'error': str(e)}), 500
-
-        if request.method == 'DELETE':
-            try:
-                contracted_lessons = ContractedLesson.query.filter_by(
-                    contract_period_id=period.id).all()
-                if contracted_lessons:
-                    student_subject_pairs = [(cl.student_id, cl.subject_id)
-                                             for cl in contracted_lessons]
-
-                    existing_lessons_count = db.session.query(
-                        Lesson.id).join(Assignment).filter(
-                            Assignment.date.between(period.start_date,
-                                                    period.end_date),
-                            tuple_(Lesson.student_id, Lesson.subject_id).in_(
-                                student_subject_pairs)).count()
-
-                    if existing_lessons_count > 0:
-                        return jsonify({
-                            'error':
-                            f'この契約期間（{period.name}）には、既に{existing_lessons_count}件のレッスンが配置されているため削除できません。'
-                        }), 400
-
-                db.session.delete(period)
-                db.session.commit()
-                return jsonify({'message': f"'{period.name}' を削除しました。"})
-            except Exception as e:
-                db.session.rollback()
-                return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/period/<int:planning_period_id>/contract-periods',
-               methods=['GET'])
-    def get_related_contract_periods(planning_period_id):
-        """指定された計画期間に関連する契約期間のみを取得する"""
-        try:
-            planning_period = db.session.get(PlanningPeriod,
-                                             planning_period_id)
-            if not planning_period:
-                return jsonify({'error': '計画期間が見つかりません。'}), 404
-
-            periods = ContractPeriod.query.filter(
-                ContractPeriod.start_date <= planning_period.end_date,
-                ContractPeriod.end_date
-                >= planning_period.start_date).order_by(
-                    ContractPeriod.start_date).all()
-
-            return jsonify([{
-                'id': p.id,
-                'name': p.name,
-                'start_date': p.start_date.isoformat(),
-                'end_date': p.end_date.isoformat()
-            } for p in periods])
-        except Exception as e:
-            app.logger.error(f"Error getting related contract periods: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/period/<int:planning_period_id>/contracted-lessons',
-               methods=['GET'])
-    def get_contracted_lessons_for_period(planning_period_id):
-        """指定された計画期間に関連する契約レッスン数を取得する"""
-        try:
-            planning_period = db.session.get(PlanningPeriod,
-                                             planning_period_id)
-            if not planning_period:
-                return jsonify({'error': '計画期間が見つかりません。'}), 404
-
-            contract_periods = ContractPeriod.query.filter(
-                ContractPeriod.start_date <= planning_period.end_date,
-                ContractPeriod.end_date >= planning_period.start_date).all()
-
-            contract_period_ids = [p.id for p in contract_periods]
-            if not contract_period_ids:
-                return jsonify({})
-
-            lessons = ContractedLesson.query.filter(
-                ContractedLesson.contract_period_id.in_(
-                    contract_period_ids)).all()
-
-            lesson_map = {
-                f"{l.student_id}-{l.subject_id}-{l.contract_period_id}":
-                l.contracted_count
-                for l in lessons
-            }
-            return jsonify(lesson_map)
-
-        except Exception as e:
-            app.logger.error(
-                f"Error getting contracted lessons for period: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route('/api/period/<int:period_id>/analysis-data', methods=['GET'])
-    def get_analysis_data(period_id):
-        try:
-            period = db.session.get(PlanningPeriod, period_id)
-            if not period:
-                return jsonify({'error': '計画期間が見つかりません。'}), 404
-
-            start_date, end_date = period.start_date, period.end_date
-
-            # --- 1. サマリーデータの計算 ---
-            total_shifts = Shift.query.filter(
-                Shift.date.between(start_date, end_date)).count()
-            total_lesson_capacity = total_shifts * 2
-
-            related_contract_periods = ContractPeriod.query.filter(
-                ContractPeriod.start_date <= end_date, ContractPeriod.end_date
-                >= start_date).all()
-            related_contract_period_ids = [
-                p.id for p in related_contract_periods
-            ]
-
-            total_contracted = db.session.query(
-                func.sum(ContractedLesson.contracted_count)).filter(
-                    ContractedLesson.contract_period_id.in_(
-                        related_contract_period_ids)).scalar() or 0
-
-            all_placed_lessons_in_period = Lesson.query.join(
-                Assignment).filter(
-                    Assignment.date.between(start_date, end_date)).all()
-            total_placed_all = len(all_placed_lessons_in_period)
-
-            lesson_labels = _calculate_and_apply_lesson_labels()
-
-            # 配置済みレッスンのうち、関連契約期間に紐づくものだけをカウント
-            total_placed_by_related_contracts = 0
-            for lesson in all_placed_lessons_in_period:
-                label = lesson_labels.get(lesson.id)
-                if not label: continue
-
-                # ラベルから契約期間の表示名を取得
-                period_display_name_from_label = label.split(' ')[0]
-
-                # 表示名が関連契約期間のいずれかに一致するかチェック
-                is_related = any((cp.display_name or cp.name
-                                  ) == period_display_name_from_label
-                                 for cp in related_contract_periods)
-                if is_related:
-                    total_placed_by_related_contracts += 1
-
-            lesson_fulfillment_rate = (total_placed_by_related_contracts /
-                                       total_contracted *
-                                       100) if total_contracted > 0 else 0
-            capacity_utilization_rate = (
-                total_placed_all / total_lesson_capacity *
-                100) if total_lesson_capacity > 0 else 0
-
-            summary_data = {
-                "total_lesson_capacity": total_lesson_capacity,
-                "total_contracted_lessons": total_contracted,
-                "total_placed_lessons": total_contracted,  # ★こちらの値に修正
-                "lesson_fulfillment_rate": round(lesson_fulfillment_rate, 1),
-                "capacity_utilization_rate": round(capacity_utilization_rate,
-                                                   1)
-            }
-
-            # --- 2. 分布データの計算 ---
-            placed_lessons_for_dist = Lesson.query.join(Assignment).filter(
-                Assignment.date.between(start_date, end_date)).all()
-            timeslot_dist, weekday_dist = defaultdict(int), defaultdict(int)
-            for lesson in placed_lessons_for_dist:
-                timeslot_dist[lesson.assignment.time_slot_id] += 1
-                weekday_dist[lesson.assignment.date.weekday()] += 1
-            distribution_data = {
-                "timeslot": [timeslot_dist[i] for i in range(1, 12)],
-                "weekday": [weekday_dist[i] for i in range(7)]
-            }
-
-            # --- 3. 講師別レポート ---
-            teacher_report = []
-            for teacher in Teacher.query.all():
-                shift_count = Shift.query.filter(
-                    Shift.teacher_id == teacher.id,
-                    Shift.date.between(start_date, end_date)).count()
-                lesson_count = Lesson.query.join(Assignment).filter(
-                    Assignment.teacher_id == teacher.id,
-                    Assignment.date.between(start_date, end_date)).count()
-                teacher_capacity = shift_count * 2
-                utilization_rate = (lesson_count / teacher_capacity *
-                                    100) if teacher_capacity > 0 else 0
-                teacher_report.append({
-                    "name":
-                    teacher.name,
-                    "shift_count":
-                    shift_count,
-                    "lesson_count":
-                    lesson_count,
-                    "utilization_rate":
-                    round(utilization_rate, 1)
-                })
-
-            # --- 4. 生徒別消化レポート ---
-            all_students = get_sorted_students()
-            subject_map = {s.id: s.name for s in Subject.query.all()}
-
-            # 配置済みレッスンの消化状況を契約期間IDごとに集計
-            fulfilled_map_by_period = defaultdict(lambda: defaultdict(int))
-            for lesson in all_placed_lessons_in_period:
-                label = lesson_labels.get(lesson.id)
-                if not label: continue
-
-                period_display_name_from_label = label.split(' ')[0]
-                matched_period = next(
-                    (cp for cp in related_contract_periods
-                     if (cp.display_name or cp.name
-                         ) == period_display_name_from_label), None)
-
-                if matched_period:
-                    key = (lesson.student_id, lesson.subject_id)
-                    fulfilled_map_by_period[matched_period.id][key] += 1
-
-            student_fulfillment_report = {}
-            for cp in related_contract_periods:
-                period_report = []
-                contracts_in_period = ContractedLesson.query.filter_by(
-                    contract_period_id=cp.id).all()
-
-                for student in all_students:
-                    student_contracts = [
-                        c for c in contracts_in_period
-                        if c.student_id == student.id
-                    ]
-                    if not student_contracts: continue
-
-                    total_contracted_student = sum(c.contracted_count
-                                                   for c in student_contracts)
-
-                    total_fulfilled_student = sum(
-                        count
-                        for (s_id, _), count in fulfilled_map_by_period.get(
-                            cp.id, {}).items() if s_id == student.id)
-
-                    rate = (total_fulfilled_student /
-                            total_contracted_student *
-                            100) if total_contracted_student > 0 else 0
-
-                    subject_details = []
-                    for contract in student_contracts:
-                        fulfilled_count = fulfilled_map_by_period.get(
-                            cp.id, {}).get((student.id, contract.subject_id),
-                                           0)
-                        subject_details.append({
-                            "subject_name":
-                            subject_map.get(contract.subject_id, "不明"),
-                            "contracted":
-                            contract.contracted_count,
-                            "fulfilled":
-                            fulfilled_count
-                        })
-
-                    period_report.append({
-                        "student_id": student.id,
-                        "student_name": student.name,
-                        "total_contracted": total_contracted_student,
-                        "total_fulfilled": total_fulfilled_student,
-                        "fulfillment_rate": round(rate, 1),
-                        "subject_details": subject_details
-                    })
-                student_fulfillment_report[cp.id] = period_report
-
-            return jsonify({
-                "summary":
-                summary_data,
-                "distribution":
-                distribution_data,
-                "teacher_report":
-                teacher_report,
-                "student_fulfillment_report":
-                student_fulfillment_report,
-                "related_contract_periods": [{
-                    'id': p.id,
-                    'name': p.name
-                } for p in related_contract_periods]
-            })
-        except Exception as e:
-            app.logger.error(f"Error in get_analysis_data: {e}")
             import traceback
             traceback.print_exc()
             return jsonify({'error': str(e)}), 500
